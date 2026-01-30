@@ -613,7 +613,7 @@ def evaluate_one_bag(bag_path: str,
 
 def main():
     parser = argparse.ArgumentParser(description="角雷达报警KPI评估(支持目录批量与RCW左右合并)。")
-    #parser.add_argument("bag", help="任意一个rosbag文件路径(若使用 --all-in-dir,则会扫描其所在目录)")
+    parser.add_argument("--bag-dir", type=str, default=".",help="包含rosbag文件的目录路径(默认当前目录)")
     parser.add_argument("--gt", default="/corner_radar/sil/warning_status", help="真值topic")
     parser.add_argument("--sys", default="/corner_radar/warning_status", help="被测topic")
     parser.add_argument("--radar-id", type=int, default=None, help="GT侧:除RCW外的功能,若指定则仅评估该radar_id(RCW始终做左右合并)")
@@ -629,11 +629,12 @@ def main():
     base_dir = os.getcwd()
 
     # 目录批量:搜集所有*.bag
-    bag_files = [os.path.join(base_dir, f) for f in os.listdir(base_dir) if f.lower().endswith(".bag")]
+    bag_files = [os.path.join(args.bag_dir, f) for f in os.listdir(args.bag_dir) 
+                 if f.lower().endswith(".bag")]
     bag_files.sort()
 
     if not bag_files:
-        print(f"[WARN] 目录 {base_dir} 未发现任何 .bag 文件。")
+        print(f"[WARN] 目录 {args.bag_dir} 未发现任何 .bag 文件。")
         return
 
     print(f"[INFO] 扫描到 {len(bag_files)} 个bag:")
@@ -752,7 +753,7 @@ def main():
     })
 
     # 写Excel(两个sheet)
-    excel_name = f"radar_{args.radar_id}.xlsx"
+    excel_name = f"./OUT/radar_{args.radar_id}.xlsx"
 
     out_xlsx = os.path.join(base_dir, excel_name)
     write_xlsx(out_xlsx, summary_rows, by_bag_rows)

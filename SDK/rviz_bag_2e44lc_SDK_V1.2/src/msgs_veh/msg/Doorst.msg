@@ -1,2 +1,0 @@
-uint8 reserved
-uint8 door_state

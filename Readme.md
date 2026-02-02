@@ -22,6 +22,14 @@
   - 被测：`/corner_radar/warning_status`
 
 ### 2. 基本使用方法
+
+### 方法一：使用GUI（最简）
+```bash
+python3 main.py
+```
+在界面中选择bags文件夹和雷达配置，点击"开始评估"
+
+### 方法二：使用命令行
 ```bash
 # 1. 左前雷达功能评估
 python3 eval_warning_metrics_cn_2026.py --radar-id 1 --radar-id-wf 2
@@ -36,11 +44,5 @@ python3 eval_warning_metrics_cn_2026.py --radar-id 3 --radar-id-wf 4
 python3 eval_warning_metrics_cn_2026.py --radar-id 4 --radar-id-wf 4
 ```
 
-### 3. 参数说明
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `--radar-id` | **GT侧雷达ID** |必须指定|
-| `--radar-id-wf` | **WF侧雷达ID** | 4 |
-| `--frame-tol` | 帧号容差 | 15 |
-| `--merge-gap-frames` | GT端防抖合并的最大间隙帧数 | 2 |
-
+## 4. 查看结果
+评估结果在`OUT/`文件夹，Excel文件名为`radar_X.xlsx`（X为雷达ID）

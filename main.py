@@ -95,6 +95,14 @@ class RadarEvalGUI:
         self.status_var = tk.StringVar(value="就绪")
         status_bar = ttk.Label(root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
         status_bar.grid(row=1, column=0, sticky=(tk.W, tk.E))
+
+        self.log_message(f"\
+--GT侧雷达ID 1 --WF侧雷达ID 2 ->左前雷达功能\n\
+--GT侧雷达ID 2 --WF侧雷达ID 2 ->右前雷达功能\n\
+--GT侧雷达ID 3 --WF侧雷达ID 4 ->左后雷达功能\n\
+--GT侧雷达ID 4 --WF侧雷达ID 4 ->右后雷达功能\n\
+    "
+        )
         
     def browse_dir(self):
         """选择bag文件目录"""

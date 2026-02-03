@@ -482,8 +482,9 @@ def evaluate_one_function(gt_samps: List[Tuple[float, int, int]],
 
 def write_xlsx(out_path: str,
                summary_rows: List[Dict[str, object]],
-               by_bag_rows: List[Dict[str, object]]) -> None:
-    """写Excel（两个sheet）。若没有openpyxl，则跳过。"""
+               by_bag_rows: List[Dict[str, object]],
+               timestamp_rows: List[Dict[str, object]] = None) -> None:  # 添加第三个sheet参数
+    """写Excel（三个sheet）。若没有openpyxl，则跳过。"""
     if openpyxl is None:
         return
     wb = Workbook()
@@ -504,6 +505,15 @@ def write_xlsx(out_path: str,
         for r in by_bag_rows:
             ws2.append([r.get(h, "") for h in headers2])
 
+    # sheet3: timestamps (新增)
+    ws3 = wb.create_sheet("timestamps")
+    if timestamp_rows and len(timestamp_rows) > 0:
+        headers3 = ["bag", "warning_type", "start_time", "end_time", 
+                    "duration_sec", "start_frame", "end_frame", "source"]
+        ws3.append(headers3)
+        for r in timestamp_rows:
+            ws3.append([r.get(h, "") for h in headers3])
+
     wb.save(out_path)
 
 
@@ -514,14 +524,17 @@ def evaluate_one_bag(bag_path: str,
                      radar_id_wf: Optional[int],
                      frame_tol: int,
                      merge_gap_frames: int,
-                     merge_rcw_lr: bool) -> Tuple[List[Dict[str, object]], Counts]:
+                     merge_rcw_lr: bool) -> Tuple[List[Dict[str, object]], Counts, List[Dict[str, object]]]:
     """
     评估单个bag,返回:
     - rows:每个功能一行 + OVERALL(同CSV结构)
     - total_counts:该bag自身的 OVERALL 计数(仅计TP/FP/FN/LA/EA/LD/ED/DW)
+    - timestamp_rows:该bag的时间戳详细信息
     """
     bag = rosbag.Bag(bag_path, "r")
-
+    timestamp_rows = []  # 新增：存储时间戳信息
+    bag_name = os.path.basename(bag_path)
+    
     # GT:带RCW左右合并(仅RCW),并做短间隙合并防抖
     gt_samples_all = read_samples_with_index_GT(bag, gt_topic, radar_id_gt,
                                                 merge_rcw_lr=merge_rcw_lr,
@@ -542,6 +555,34 @@ def evaluate_one_bag(bag_path: str,
         name = FUNC_NAMES[idx] or f"Func{idx}"
         gt_samps = gt_samples_all[idx]
         wf_samps = wf_samples_all[idx]
+
+          # GT端的时间戳信息
+        gt_events = samples_to_events(gt_samps)
+        for ev in gt_events:
+            timestamp_rows.append({
+                "bag": bag_name,
+                "warning_type": name,
+                "start_time": ev.start_t,
+                "end_time": ev.end_t,
+                "duration_sec": ev.duration(),
+                "start_frame": ev.start_idx,
+                "end_frame": ev.end_idx,
+                "source": "GT"
+            })
+        
+        # WF端的时间戳信息
+        wf_events = samples_to_events(wf_samps)
+        for ev in wf_events:
+            timestamp_rows.append({
+                "bag": bag_name,
+                "warning_type": name,
+                "start_time": ev.start_t,
+                "end_time": ev.end_t,
+                "duration_sec": ev.duration(),
+                "start_frame": ev.start_idx,
+                "end_frame": ev.end_idx,
+                "source": "WF"
+            })
 
         c, gt_ev_cnt, wf_ev_cnt = evaluate_one_function(gt_samps, wf_samps, frame_tol=frame_tol)
 
@@ -608,8 +649,7 @@ def evaluate_one_bag(bag_path: str,
         "sys_events": total_wf_events,
     })
 
-    return rows, total
-
+    return rows, total, timestamp_rows  # 返回三个值
 
 def main():
     parser = argparse.ArgumentParser(description="角雷达报警KPI评估(支持目录批量与RCW左右合并)。")
@@ -656,9 +696,10 @@ def main():
     total_all = Counts()
     total_gt_events_all = 0
     total_wf_events_all = 0
+    all_timestamp_rows: List[Dict[str, object]] = []  # 新增：所有时间戳信息
 
     for bf in bag_files:
-        rows, total = evaluate_one_bag(
+        rows, total, timestamp_rows = evaluate_one_bag(  # 接收第三个返回值
             bag_path=bf,
             gt_topic=args.gt,
             wf_topic=args.sys,
@@ -668,6 +709,9 @@ def main():
             merge_gap_frames=args.merge_gap_frames,
             merge_rcw_lr=True
         )
+
+        all_timestamp_rows.extend(timestamp_rows)     # 保存时间戳信息
+
         # rows 包含每个功能 + OVERALL
         perbag_overall = None
         for r in rows:
@@ -756,7 +800,8 @@ def main():
     excel_name = f"./OUT/radar_{args.radar_id}.xlsx"
 
     out_xlsx = os.path.join(base_dir, excel_name)
-    write_xlsx(out_xlsx, summary_rows, by_bag_rows)
+    write_xlsx(out_xlsx, summary_rows, by_bag_rows, all_timestamp_rows) 
+
     if openpyxl is not None:
         print(f"已输出Excel：{out_xlsx} （summary + by_bag）")
     else:

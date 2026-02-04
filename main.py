@@ -7,10 +7,12 @@
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import subprocess
 import os
 import sys
 import threading
+
+# 导入评估函数
+from eval_warning_metrics_cn import evaluate_radar_metrics
 
 class RadarEvalGUI:
     def __init__(self, root):
@@ -160,44 +162,24 @@ class RadarEvalGUI:
     def run_evaluation(self):
         """运行评估逻辑"""
         try:
-            # 构建命令行参数
-            cmd = [
-                sys.executable,  # Python解释器
-                "eval_warning_metrics_cn.py",  # 逻辑处理文件
-                "--bag-dir", self.bag_dir_var.get(),
-                "--radar-id", self.radar_id_var.get(),
-                "--radar-id-wf", self.radar_id_wf_var.get(),
-                "--frame-tol", self.frame_tol_var.get(),
-                "--merge-gap-frames", self.merge_gap_var.get(),
-            ]
-            
             self.log_message(f"开始评估...")
             self.log_message(f"Bag目录: {self.bag_dir_var.get()}")
             self.log_message(f"雷达ID: GT={self.radar_id_var.get()}, WF={self.radar_id_wf_var.get()}")
             
             # 运行评估程序
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-                errors='replace'
+            result = evaluate_radar_metrics(
+                bag_dir=self.bag_dir_var.get(),
+                radar_id_gt=int(self.radar_id_var.get()),
+                radar_id_wf=int(self.radar_id_wf_var.get()),
+                frame_tol=int(self.frame_tol_var.get()),
+                merge_gap_frames=int(self.merge_gap_var.get())
             )
             
             # 显示输出
-            if result.stdout:
-                self.log_message(result.stdout)
-            if result.stderr:
-                self.log_message("错误输出:")
-                self.log_message(result.stderr)
+            self.log_message(result)
                 
-            if result.returncode == 0:
-                self.log_message("评估完成！")
-                self.status_var.set("评估完成")
-                
-            else:
-                self.log_message("评估失败！")
-                self.status_var.set("评估失败")
+            self.log_message("评估完成！")
+            self.status_var.set("评估完成")
                 
         except Exception as e:
             self.log_message(f"运行错误: {str(e)}")

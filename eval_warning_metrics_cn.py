@@ -88,11 +88,11 @@ python3 eval_warning_metrics_cn_2026.py --radar-id 4 --radar-id-wf 4
 
 """
 
-import argparse
 import os
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Optional
-
+import io
+import sys
 import rosbag
 from std_msgs.msg import Int32MultiArray
 
@@ -651,21 +651,56 @@ def evaluate_one_bag(bag_path: str,
 
     return rows, total, timestamp_rows  # 返回三个值
 
-def main():
-    parser = argparse.ArgumentParser(description="角雷达报警KPI评估(支持目录批量与RCW左右合并)。")
-    parser.add_argument("--bag-dir", type=str, default=".",help="包含rosbag文件的目录路径(默认当前目录)")
-    parser.add_argument("--gt", default="/corner_radar/sil/warning_status", help="真值topic")
-    parser.add_argument("--sys", default="/corner_radar/warning_status", help="被测topic")
-    parser.add_argument("--radar-id", type=int, default=None, help="GT侧:除RCW外的功能,若指定则仅评估该radar_id(RCW始终做左右合并)")
-    parser.add_argument("--radar-id-wf", type=int, default=4, help="WF侧:被测topic过滤的radar_id(默认4)")
-    parser.add_argument("--frame-tol", type=int, default=15, help="帧号容差(±frame-tol),默认15")
-    parser.add_argument("--merge-gap-frames", type=int, default=2, help="GT端事件去抖合并:相邻两段之间的“0”间隙帧数 ≤ 该值时合并(默认2;设为0则不合并)")
-    #parser.add_argument("--all-in-dir", action="store_true", help="扫描bag所在目录下的所有*.bag并合并统计")
-    parser.add_argument("--out", default=None, help="输出CSV路径(默认:单bag为 *_metrics.csv,目录合并为 *_ALL_metrics.csv)")
-    parser.add_argument("--xlsx", default=None, help="目录合并时的Excel输出路径(默认:*_ALL_metrics.xlsx)")
-    args = parser.parse_args()
 
+def evaluate_radar_metrics(bag_dir: str, 
+                          radar_id_gt: Optional[int] = None,
+                          radar_id_wf: int = 4,
+                          frame_tol: int = 15,
+                          merge_gap_frames: int = 2,
+                          gt_topic: str = "/corner_radar/sil/warning_status",
+                          wf_topic: str = "/corner_radar/warning_status") -> str:
+    """
+    评估雷达指标的核心函数，可直接调用
     
+    Args:
+        bag_dir: 包含rosbag文件的目录路径
+        radar_id_gt: GT侧雷达ID
+        radar_id_wf: WF侧雷达ID
+        frame_tol: 帧号容差
+        merge_gap_frames: GT端事件去抖合并的最大间隙帧数
+        gt_topic: 真值topic
+        wf_topic: 被测topic
+        
+    Returns:
+        评估结果的字符串输出
+    """
+    
+    
+    # 创建字符串缓冲区捕获输出
+    stdout_buffer = io.StringIO()
+    stderr_buffer = io.StringIO()
+    
+
+    # 重定向输出到缓冲区
+    sys.stdout = stdout_buffer
+    sys.stderr = stderr_buffer
+    
+    # 模拟命令行参数
+    class Args:
+        def __init__(self):
+            self.bag_dir = bag_dir
+            self.gt = gt_topic
+            self.sys = wf_topic
+            self.radar_id = radar_id_gt
+            self.radar_id_wf = radar_id_wf
+            self.frame_tol = frame_tol
+            self.merge_gap_frames = merge_gap_frames
+            self.out = None
+            self.xlsx = None
+    
+    args = Args()
+    
+    # 执行评估逻辑
     base_dir = os.getcwd()
 
     # 目录批量:搜集所有*.bag
@@ -674,12 +709,12 @@ def main():
     bag_files.sort()
 
     if not bag_files:
-        print(f"[WARN] 目录 {args.bag_dir} 未发现任何 .bag 文件。")
-        return
+        return f"[WARN] 目录 {args.bag_dir} 未发现任何 .bag 文件。"
 
-    print(f"[INFO] 扫描到 {len(bag_files)} 个bag:")
+    output_lines = []
+    output_lines.append(f"[INFO] 扫描到 {len(bag_files)} 个bag:")
     for bf in bag_files:
-        print("   -", os.path.basename(bf))
+        output_lines.append(f"   - {os.path.basename(bf)}")
 
     # 聚合：逐包评估，累加到“全局功能行”
     agg_rows: Dict[str, Dict[str, object]] = {}  # key=function name
@@ -802,10 +837,10 @@ def main():
     out_xlsx = os.path.join(base_dir, excel_name)
     write_xlsx(out_xlsx, summary_rows, by_bag_rows, all_timestamp_rows) 
 
+    result_output = "\n".join(output_lines)
     if openpyxl is not None:
-        print(f"已输出Excel：{out_xlsx} （summary + by_bag）")
+        result_output += f"\n已输出Excel：{out_xlsx} （summary + by_bag）"
     else:
-        print("[WARN] 当前环境未安装 openpyxl, pip install openpyxl")
-
-if __name__ == "__main__":
-    main()
+        result_output += "\n[WARN] 当前环境未安装 openpyxl, pip install openpyxl"
+        
+    return result_output

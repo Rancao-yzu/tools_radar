@@ -3,3 +3,4 @@ devel
 *.ver
 *.pyc
 **/.vscode
+**/OUT

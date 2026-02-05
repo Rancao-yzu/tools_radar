@@ -18,16 +18,9 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QHBoxLayout, QPushButton, QLabel, QLineEdit, 
                            QFileDialog, QMessageBox, QProgressBar,
                            QSpinBox, QGroupBox, QFormLayout, QTextEdit)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
 
-class BagAnalyzerThread(QThread):
-    """后台分析线程"""
-    progress_update = pyqtSignal(int, int, str, str)  # 当前, 总数, 文件名, 状态
-    analysis_done = pyqtSignal(list, list)  # 所有结果, CSV路径列表
-    error_occurred = pyqtSignal(str)  # 错误信息
-
+class BagAnalyzer:
     def __init__(self, bag_files, frame_header, vehicle_id, custom_field, output_folder):
-        super().__init__()
         self.bag_files = bag_files
         self.frame_header = frame_header
         self.vehicle_id = vehicle_id
@@ -50,6 +43,18 @@ class BagAnalyzerThread(QThread):
             "WFRARR": [],
         }
         self.csv_files = []  # 存储生成的CSV文件路径
+        
+        # 添加进度回调函数
+        self.progress_callback = None
+        self.done_callback = None
+        self.error_callback = None
+
+    def set_callbacks(self, progress_callback, done_callback, error_callback):
+        """设置回调函数替代信号"""
+         # 保存这三个方法，以便后续调用
+        self.progress_callback = progress_callback
+        self.done_callback = done_callback
+        self.error_callback = error_callback
 
     def run(self):
         try:
@@ -70,25 +75,32 @@ class BagAnalyzerThread(QThread):
                 
                 for topic, radar_name in self.radar_topics:
                     task_count += 1
-                    self.progress_update.emit(task_count, total_tasks, bag_name, f"处理{radar_name}...")
+                    if self.progress_callback:
+                        self.progress_callback(task_count, total_tasks, bag_name, f"处理{radar_name}...")
                     
                     # 处理每个雷达话题
                     self.process_radar_topic(bag_file, bag_name, topic, radar_name)
             
-            # 为每个雷达生成CSV文件
-            for radar_name in self.radar_targets.keys():
-                if self.radar_targets[radar_name]:
-                    self.progress_update.emit(task_count, total_tasks, "", f"生成{radar_name}CSV...")
-                    csv_file = self.save_radar_to_csv(radar_name)
-                    if csv_file:
-                        self.csv_files.append(csv_file)
-                        task_count += 1
-                        self.progress_update.emit(task_count, total_tasks, "", f"{radar_name}CSV完成")
+                # 为每个雷达生成CSV文件
+                for radar_name in self.radar_targets.keys():
+                    if self.radar_targets[radar_name]:
+                        if self.progress_callback:
+                            self.progress_callback(task_count, total_tasks, "", f"生成{radar_name}CSV...")
+                        csv_file = self.save_radar_to_csv(radar_name)
+                        if csv_file:
+                            self.csv_files.append(csv_file)
+                            task_count += 1
+                            if self.progress_callback:
+                                self.progress_callback(task_count, total_tasks, "", f"{radar_name}CSV完成")
+
+                self.radar_targets = {name: [] for name in self.radar_targets.keys()}
             
-            self.analysis_done.emit([], self.csv_files)
+            if self.done_callback:
+                self.done_callback([], self.csv_files)
             
         except Exception as e:
-            self.error_occurred.emit(str(e))
+            if self.error_callback:
+                self.error_callback(str(e))
 
     def process_radar_topic(self, bag_file, bag_name, topic, radar_name):
         """处理单个雷达话题"""
@@ -162,40 +174,6 @@ class BagAnalyzerThread(QThread):
             print(f"处理雷达话题 {topic} 时出错: {e}")
             import traceback
             traceback.print_exc()
-
-    def check_bag_for_valid_frames(self, bag_file):
-        """检查bag文件中是否有匹配帧头的消息"""
-        try:
-            bag = rosbag.Bag(bag_file, 'r')
-            has_valid = False
-            
-            # 检查所有雷达话题
-            for topic, radar_name in self.radar_topics:
-                for msg_topic, msg, t in bag.read_messages(topics=[topic]):
-                    if not hasattr(msg, 'outputData'):
-                        continue
-                        
-                    raw_bytes = bytes(msg.outputData)
-                    
-                    # 检查最小长度
-                    if len(raw_bytes) < 8:
-                        continue
-
-                    # 检查帧头
-                    frame_header_bytes = struct.unpack_from('<H', raw_bytes, 0)[0]
-                    if frame_header_bytes == self.frame_header:
-                        has_valid = True
-                        break
-                
-                if has_valid:
-                    break
-            
-            bag.close()
-            return has_valid
-            
-        except Exception as e:
-            print(f"检查文件 {bag_file} 时出错: {e}")
-            return False
 
     def save_radar_to_csv(self, radar_name):
         """保存雷达数据到CSV，命名"""
@@ -409,7 +387,7 @@ class BagAnalyzerGUI(QMainWindow):
         
     def init_ui(self):
         self.setWindowTitle("雷达目标信息提取工具")
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(100, 100, 660, 600)
         
         # 中心部件
         central_widget = QWidget()
@@ -447,6 +425,8 @@ class BagAnalyzerGUI(QMainWindow):
         self.header_input.setRange(0, 65535)
         self.header_input.setValue(0x5AA5)  # 默认帧头
         self.header_input.setMinimumWidth(100)
+        self.header_input.setDisplayIntegerBase(16)  # 设置为十六进制显示
+        self.header_input.setPrefix("0x")  # 添加前缀，可选
         control_layout.addRow("帧头校验(十六进制):", self.header_input)
         
         # 文件计数
@@ -515,15 +495,15 @@ class BagAnalyzerGUI(QMainWindow):
         self.progress_bar.setValue(0)
         
         # 计算总任务数：每个bag文件 × 4个雷达
-        total_tasks = len(self.bag_files) * 4 + 4  # 额外4个任务用于生成CSV
+        total_tasks = len(self.bag_files) * (4 + 4)  # 额外4个任务用于生成CSV
         self.progress_bar.setMaximum(total_tasks)
         
         self.info_text.clear()
         self.info_text.append(f"开始提取目标信息...")
         self.info_text.append("-" * 50)
         
-        # 创建并启动分析线程
-        self.analyzer_thread = BagAnalyzerThread(
+        # 创建分析对象
+        self.analyzer = BagAnalyzer(
             self.bag_files,
             self.header_input.value(),
             vehicle_id,
@@ -531,11 +511,14 @@ class BagAnalyzerGUI(QMainWindow):
             output_folder
         )
         
-        self.analyzer_thread.progress_update.connect(self.update_progress)
-        self.analyzer_thread.analysis_done.connect(self.analysis_completed)
-        self.analyzer_thread.error_occurred.connect(self.analysis_error)
+        # 设置回调函数替代信号
+        self.analyzer.set_callbacks(
+            self.update_progress,
+            self.analysis_completed,
+            self.analysis_error
+        )
         
-        self.analyzer_thread.start()
+        self.analyzer.run()
         
     def update_progress(self, current, total, filename, status):
         """更新进度"""
@@ -557,7 +540,7 @@ class BagAnalyzerGUI(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")    # 设置应用样式
+    app.setStyle("Breeze")    # 设置应用样式
     
     window = BagAnalyzerGUI()
     window.show()

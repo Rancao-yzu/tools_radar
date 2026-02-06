@@ -67,7 +67,7 @@ class BagAnalyzer:
             # 初始化进度
             total_files = len(self.bag_files)
             total_radars = len(self.radar_topics)
-            total_tasks = total_files * total_radars
+            total_tasks = total_files * (total_radars + 4)
             
             task_count = 0
             for i, bag_file in enumerate(self.bag_files, 1):
@@ -84,8 +84,6 @@ class BagAnalyzer:
                 # 为每个雷达生成CSV文件
                 for radar_name in self.radar_targets.keys():
                     if self.radar_targets[radar_name]:
-                        if self.progress_callback:
-                            self.progress_callback(task_count, total_tasks, "", f"生成{radar_name}CSV...")
                         csv_file = self.save_radar_to_csv(radar_name)
                         if csv_file:
                             self.csv_files.append(csv_file)
@@ -96,6 +94,7 @@ class BagAnalyzer:
                 self.radar_targets = {name: [] for name in self.radar_targets.keys()}
             
             if self.done_callback:
+                self.progress_callback(total_tasks, total_tasks, "", f"完成")
                 self.done_callback([], self.csv_files)
             
         except Exception as e:
@@ -494,10 +493,6 @@ class BagAnalyzerGUI(QMainWindow):
         self.start_btn.setEnabled(False)
         self.progress_bar.setValue(0)
         
-        # 计算总任务数：每个bag文件 × 4个雷达
-        total_tasks = len(self.bag_files) * (4 + 4)  # 额外4个任务用于生成CSV
-        self.progress_bar.setMaximum(total_tasks)
-        
         self.info_text.clear()
         self.info_text.append(f"开始提取目标信息...")
         self.info_text.append("-" * 50)
@@ -522,6 +517,7 @@ class BagAnalyzerGUI(QMainWindow):
         
     def update_progress(self, current, total, filename, status):
         """更新进度"""
+        self.progress_bar.setMaximum(total)
         self.progress_bar.setValue(current)
         
     def analysis_completed(self, results, csv_files):

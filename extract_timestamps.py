@@ -102,6 +102,9 @@ def read_radar_samples(bag, topic):
         radar_id = int(data[0])  # 第一个元素是雷达ID
         frame_idx += 1  # 帧号递增
         ts = t.to_sec()  # 转换为秒
+
+         # 计算调整后的帧号（对齐到参考帧率）
+        adjusted_frame_idx = int(frame_idx / 2.65)  # 取整数
         
         # 初始化数据结构
         if radar_id not in samples:
@@ -112,7 +115,7 @@ def read_radar_samples(bag, topic):
         for func_idx in range(1, 16):
             bit = 1 if int(data[func_idx]) != 0 else 0
             # 存储(时间戳, 位值, 帧号)
-            samples[radar_id][func_idx].append((ts, bit, frame_idx))
+            samples[radar_id][func_idx].append((ts, bit, adjusted_frame_idx))
     
     return samples
 

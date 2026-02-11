@@ -58,6 +58,7 @@ int& frameCount3, int& frameCount4)
   pointcloud_msgs4_.clear();
 
   corner_radar_warning_msgs_.clear();
+  IMU_msgs_.clear();
   empty_msgs_.clear();
   msg_flags_.clear();
 
@@ -73,7 +74,8 @@ int& frameCount3, int& frameCount4)
     "/wf/corner_radar/lgu_data_3", "/wf/corner_radar/lgu_data_4", 
     "/cv_camera_0/image_raw/compressed","/cv_camera_1/image_raw/compressed", "/cv_camera_2/image_raw/compressed",
     "/cv_camera_3/image_raw/compressed", "/cv_camera_4/image_raw/compressed","/cv_camera_5/image_raw/compressed",
-    "/wf/car_id6/parsed2","/corner_radar/warning_status"
+    "/wf/car_id6/parsed2","/corner_radar/warning_status",
+    "/wf/imu_data/parsed"
   
   };
   rosbag::View view(bag_, rosbag::TopicQuery(topics));
@@ -140,6 +142,10 @@ int& frameCount3, int& frameCount4)
     else if (msg.getTopic() == "/cv_camera_5/image_raw/compressed")
     {
       camera_msgs5_.push_back(msg);
+    }
+    else if(msg.getTopic() == "/wf/imu_data/parsed") 
+    {
+          IMU_msgs_.push_back(msg);
     }
 
     count++;
@@ -299,6 +305,9 @@ void BagReader::packetCallbackMsg()
           //car
           frame_msgs_.push_back(car_msgs_[msg_flags_[i]]);
           break;
+        case 13:
+          frame_msgs_.push_back(IMU_msgs_[msg_flags_[i]]);
+          break;
         default:  
           break;
       }
@@ -334,6 +343,7 @@ void BagReader::jumpToFrame(int frame_number)
       msg_flags_[11] = findClosestCameraFrame(selected_time,camera_msgs5_);
 
       msg_flags_[12]= findClosestCarFrame(selected_time);
+      msg_flags_[13] = findClosestPtFrame(selected_time,IMU_msgs_);
 
       packetCallbackMsg();
       message_callback_(frame_msgs_,current_frame_,msg_flags_);
@@ -477,6 +487,7 @@ void BagReader::playLoop()
     msg_flags_[11] = findClosestCameraFrame(selected_time,camera_msgs5_);
 
     msg_flags_[12]= findClosestCarFrame(selected_time);
+    msg_flags_[13] = findClosestPtFrame(selected_time,IMU_msgs_);
 
 
     packetCallbackMsg();

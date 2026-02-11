@@ -26,6 +26,7 @@
 #include <arbe_msgs/VehStatusOutput.h>
 #include <wf_srvs/PlaySingleFrame.h>
 #include <std_msgs/UInt8MultiArray.h>
+#include <arbe_msgs/ImuOutput.h>
 
 namespace my_rviz_plugin
 {
@@ -97,6 +98,7 @@ private:
   ros::Publisher pointcloud_pub5_;
 
   ros::Publisher corner_radar_warning_status_pub_;
+  ros::Publisher IMU_msgs_pub;
   // ros节点
   ros::NodeHandle nh_;
 

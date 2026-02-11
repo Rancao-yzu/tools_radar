@@ -63,6 +63,7 @@ add_message_files(
   wfTiFrameRD.msg
   wfTiPointRD.msg
   wfAutosarData.msg
+  ImuOutput.msg
 )
 generate_messages(
   DEPENDENCIES

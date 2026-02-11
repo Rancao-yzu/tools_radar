@@ -72,7 +72,7 @@ private:
   std::vector<rosbag::MessageInstance> pointcloud_msgs5_;
 
 
-
+  std::vector<rosbag::MessageInstance> IMU_msgs_;
   std::vector<rosbag::MessageInstance> frame_msgs_; 
   std::vector<rosbag::MessageInstance> empty_msgs_; 
   std::vector<int>    msg_flags_;
@@ -90,7 +90,7 @@ private:
   MessageCallback message_callback_;
   UpdateProgressBarCallback update_progress_bar_callback_;
   std::mutex frame_mutex;
-  const int MAX_TOPIC_NUM = 13;
+  const int MAX_TOPIC_NUM = 14;
 };
 
 } // namespace my_rviz_plugin

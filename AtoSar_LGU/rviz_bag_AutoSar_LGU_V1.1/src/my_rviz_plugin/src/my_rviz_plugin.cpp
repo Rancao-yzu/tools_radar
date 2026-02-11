@@ -31,7 +31,7 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   camera_pub4_ = nh_.advertise<sensor_msgs::CompressedImage>("/cv_camera_4/image_raw/compressed", 10);
   camera_pub5_ = nh_.advertise<sensor_msgs::CompressedImage>("/cv_camera_5/image_raw/compressed", 10);
 
-  
+  IMU_msgs_pub = nh_.advertise<arbe_msgs::ImuOutput>("/wf/imu_data/parsed", 10);
   car_pub_ = nh_.advertise<arbe_msgs::VehStatusOutput>("/wf/car_id6/parsed2", 1);
 
   corner_radar_warning_status_pub_ = nh_.advertise<std_msgs::UInt8MultiArray>("/corner_radar/warning_status", 10);
@@ -304,6 +304,12 @@ void MyRvizPlugin::publishClosestMessages(const std::vector<rosbag::MessageInsta
   {
     camera_pub5_.publish(*camera_data5);
   }
+
+  boost::shared_ptr<arbe_msgs::ImuOutput> imu_data = frame_msg[13].instantiate<arbe_msgs::ImuOutput>();
+  if (imu_data&&(msg_flag[13]>=0))
+      IMU_msgs_pub.publish(*imu_data);
+  else
+      ROS_INFO("IMU_msgs_pub is null");
 
   //—————warning_status信号—————//
   boost::shared_ptr<std_msgs::UInt8MultiArray> warning_status = frame_msg[5].instantiate<std_msgs::UInt8MultiArray>();

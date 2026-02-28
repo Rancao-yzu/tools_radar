@@ -49,6 +49,7 @@ protected Q_SLOTS:
   void updatePlayRate();
   void sliderValueChanged(int value);
   void selectMainRadar();
+    void selectFolder();
 
 private:
   void updateSliderAndSpinner();
@@ -79,6 +80,13 @@ private:
   QComboBox* select_main_radar_;
   QSlider* frame_slider_;
   QProgressBar* progress_bar_;
+
+
+  QLineEdit* folder_path_;           // 新增：文件夹路径输入框
+  QPushButton* select_folder_button_; // 新增：选择文件夹按钮
+  QLabel* current_bag_label_;        // 新增：当前 bag 文件标签
+  QLabel* current_bag_;
+  QWidget* bag_info_widget_; // <--- 新增：用于包裹两个标签的容器
 
   // 添加 ROS 发布者的声明
   ros::Publisher car_pub_;
@@ -125,6 +133,10 @@ private:
   volatile bool bContinuePlayFlag;
   volatile bool bSPFlag;
   int mainRadarIndex_;
+
+  std::vector<std::string> bag_files_; // 新增：bag 文件路径列表
+  int current_bag_index_;             // 新增：当前 bag 文件索引
+  bool folder_mode_;                  // 新增：文件夹模式标志
 
 public:
   BagReader* bag_reader_;

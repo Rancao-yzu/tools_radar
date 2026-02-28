@@ -445,7 +445,6 @@ void MyRvizPlugin::readBagFile()
    
     // bag_reader_->jumpToFrame(0);  // 重置当前帧为 0;取消注释这行代码开头id可能会重复
 
-    int maxVal = 0;
     if(mainRadarIndex_ == 0)
     {
         frame_spinner_->setMaximum(frame_count0);

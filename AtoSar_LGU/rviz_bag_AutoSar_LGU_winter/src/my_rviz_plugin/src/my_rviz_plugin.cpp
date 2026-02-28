@@ -6,6 +6,9 @@
 #include "my_rviz_plugin/my_rviz_plugin.h"
 #include <boost/date_time/posix_time/posix_time.hpp>
 
+#include <QDir>
+#include <QTimer>
+
 namespace my_rviz_plugin
 {
 
@@ -13,7 +16,8 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   : rviz::Panel(parent), bag_reader_(new BagReader()), 
   frame_count0(0), 
   frame_count1(0),  frame_count2(0), 
-  frame_count3(0), frame_count4(0)
+  frame_count3(0), frame_count4(0),
+  current_bag_index_(-1), folder_mode_(false)
 {
   nh_ = ros::NodeHandle();
 
@@ -52,6 +56,20 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   service3_ = nh_.advertiseService("/play_single_frame_3", &MyRvizPlugin::handleServiceRequest, this);
   service4_ = nh_.advertiseService("/play_single_frame_4", &MyRvizPlugin::handleServiceRequest, this);
 
+    // 创建控件
+  folder_path_ = new QLineEdit;
+  select_folder_button_ = new QPushButton("Select Folder");
+  current_bag_label_ = new QLabel("Current Bag: N/A");
+  current_bag_ = new QLabel("- n/N");
+  
+  // 新增：创建Bag信息容器
+  bag_info_widget_ = new QWidget(this);
+  QHBoxLayout* bag_layout = new QHBoxLayout(bag_info_widget_);
+  bag_layout->setContentsMargins(0, 0, 0, 0);  // 去除边距
+  bag_layout->addWidget(current_bag_label_);
+  bag_layout->addWidget(current_bag_);
+  bag_layout->addStretch();  // 让标签靠左对齐
+  
   bag_file_path_ = new QLineEdit;
   select_button_ = new QPushButton("Select");
   read_button_ = new QPushButton("Read");
@@ -81,6 +99,7 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   stop_button_->setFixedSize(40, 30);
   step_forward_button_->setFixedSize(50, 30);
   step_backward_button_->setFixedSize(50, 30);
+  select_folder_button_->setFixedSize(100, 30);
 
   select_main_radar_->addItem("前雷达(0)");
   select_main_radar_->addItem("前左角(1)");
@@ -98,12 +117,37 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   progress_bar_->setRange(0.0,1.2);
   progress_bar_->setValue(0.0);
 
-  QVBoxLayout* layout = new QVBoxLayout;
-  QHBoxLayout* file_layout = new QHBoxLayout;
-  file_layout->addWidget(bag_file_path_);
-  file_layout->addWidget(select_button_);
-  file_layout->addWidget(read_button_);
+  // ============== 使用 QGridLayout 创建主布局 ==============
+  QGridLayout* main_layout = new QGridLayout;
+  
+  // 设置网格间距
+  main_layout->setHorizontalSpacing(10);
+  main_layout->setVerticalSpacing(5);
+  main_layout->setContentsMargins(10, 10, 10, 10);  // 设置边距
 
+  // 第0行：文件选择区域
+  main_layout->addWidget(bag_file_path_, 0, 0, 1, 3);       // 行0, 列0-2
+  main_layout->addWidget(select_button_, 0, 3);             // 行0, 列3
+  main_layout->addWidget(read_button_, 0, 4);               // 行0, 列4
+  main_layout->addWidget(select_folder_button_, 0, 5);      // 行0, 列5
+
+  // 第1行：帧数统计标签
+  main_layout->addWidget(frame_count_label_, 1, 0, 1, 6);   // 行1, 占满整行
+
+  // 第2行：文件夹路径显示
+  main_layout->addWidget(folder_path_, 2, 0, 1, 6);         // 行2, 占满整行
+
+  // 第3行：Bag信息（使用合成的控件）
+  main_layout->addWidget(bag_info_widget_, 3, 0, 1, 6);     // 行3, 占满整行
+
+  // 第4行：帧ID和时间戳
+  main_layout->addWidget(frame_id_label_, 4, 0, 1, 6);      // 行4, 占满整行
+
+  // 第5行：帧数输入框和滑块
+  main_layout->addWidget(frame_spinner_, 5, 0);             // 行5, 列0
+  main_layout->addWidget(frame_slider_, 5, 1, 1, 5);        // 行5, 列1-5
+
+  // 第6行：控制按钮区域（使用水平布局）
   QHBoxLayout* control_layout = new QHBoxLayout;
   // control_layout->addWidget(new QLabel("Step:"));
   // control_layout->addWidget(step_spinner_);
@@ -114,16 +158,19 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   control_layout->addWidget(new QLabel("Play Rate:"));
   control_layout->addWidget(play_rate_combo_);
   control_layout->addWidget(select_main_radar_);
+  control_layout->addStretch();  // 让按钮靠左对齐
+  
+  // 将控制布局添加到网格
+  main_layout->addLayout(control_layout, 6, 0, 1, 6);       // 行6, 占满整行
 
-  layout->addLayout(file_layout);
-  //layout->addWidget(frame_count_label_);
-  layout->addWidget(frame_id_label_);
-  layout->addWidget(frame_spinner_);
-  layout->addWidget(frame_slider_);
-  layout->addLayout(control_layout);
-  layout->addWidget(progress_bar_);
-  setLayout(layout);
+  // 第7行：进度条
+  main_layout->addWidget(progress_bar_, 7, 0, 1, 6);        // 行7, 占满整行
 
+  // 设置布局
+  setLayout(main_layout);
+  // ============== 布局结束 ==============
+
+  // 连接信号槽
   connect(select_button_, SIGNAL(clicked()), this, SLOT(selectBagFile()));
   connect(read_button_, SIGNAL(clicked()), this, SLOT(readBagFile()));
   connect(play_button_, SIGNAL(clicked()), this, SLOT(playBag()));
@@ -134,6 +181,7 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   connect(play_rate_combo_, SIGNAL(currentIndexChanged(int)), this, SLOT(updatePlayRate()));
   connect(frame_slider_, SIGNAL(valueChanged(int)), this, SLOT(sliderValueChanged(int)));
   connect(select_main_radar_, SIGNAL(currentIndexChanged(int)), this, SLOT(selectMainRadar()));
+  connect(select_folder_button_, SIGNAL(clicked()), this, SLOT(selectFolder()));
 
   play_button_->setEnabled(false);
   stop_button_->setEnabled(false);
@@ -151,7 +199,44 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
                                         ) {
     publishClosestMessages(frame_msg,frame_number,msg_flag);
     updateSliderAndSpinner();
-  });//const rosbag::MessageInstance& car_msg
+           
+    // 如果处于文件夹模式且已到达当前 bag 文件的最后一帧
+    if (folder_mode_ && frame_number >= bag_reader_->getMainRadarPclSize() - 1) 
+    {
+
+      current_bag_->setText(
+        QString("bag file %1/%2")
+        .arg(current_bag_index_ + 1)
+        .arg(static_cast<long long>(bag_files_.size())) // size_t 转为整数
+      );
+
+      // 使用 QMetaObject::invokeMethod 在主线程中执行
+      QMetaObject::invokeMethod(this, [this]()
+      {
+        stopBag();
+      
+        if (current_bag_index_ < static_cast<int>(bag_files_.size()) - 1) // 判断是否还有未处理的 bag 文件
+        {
+          ROS_INFO("loading bag %d/%lu: %s",current_bag_index_ + 2, bag_files_.size(), bag_files_[current_bag_index_ + 1].c_str());
+
+          readBagFile();
+          
+          QTimer::singleShot(2000, this, [this]() 
+          {// 延迟调用 playBag，确保 readBagFile 完成
+            ROS_INFO("Starting playback for new bag file (index: %d)", current_bag_index_);
+            bContinuePlayFlag = true; // 确保播放标志为 true
+            playBag();
+          });
+        } else {
+          ROS_WARN("No more bag files to load (%lu files processed)", bag_files_.size());
+          current_bag_label_->setText("Current Bag: No more files");
+          folder_mode_ = false;
+          current_bag_index_ = -1;
+          bag_file_path_->clear();
+        }
+      }, Qt::QueuedConnection);
+    }
+  });//设置回调：当BagReader有新帧数据时，发布ROS消息并更新UI
 
   bag_reader_->setUpdateProgressBarCallback([this](float value){
     progress_bar_->setValue(value);
@@ -336,9 +421,14 @@ void MyRvizPlugin::publishClosestMessages(const std::vector<rosbag::MessageInsta
 
   boost::shared_ptr<arbe_msgs::ImuOutput> imu_data = frame_msg[13].instantiate<arbe_msgs::ImuOutput>();
   if (imu_data&&(msg_flag[13]>=0))
-      IMU_msgs_pub.publish(*imu_data);
+  {
+    IMU_msgs_pub.publish(*imu_data);
+  }
   else
-      ROS_INFO("IMU_msgs_pub is null");
+  {
+    ROS_INFO("IMU_msgs_pub is null");
+  }
+      
 
   //—————warning_status信号—————//
   boost::shared_ptr<std_msgs::UInt8MultiArray> warning_status = frame_msg[5].instantiate<std_msgs::UInt8MultiArray>();
@@ -359,42 +449,72 @@ void MyRvizPlugin::selectBagFile()
   if (!file.isEmpty())
   {
     bag_file_path_->setText(file);
+    folder_mode_ = false;
+    current_bag_index_ = -1;
+    current_bag_label_->setText("Current Bag: N/A");
   }
 }
 
-void MyRvizPlugin::recreateBagReader()
+void MyRvizPlugin::selectFolder()
 {
-  // 删除旧的bag_reader_
-  delete bag_reader_;
-  
-  // 创建新的bag_reader_
-  bag_reader_ = new BagReader();
-  
-  // 重新设置回调函数
-  bag_reader_->setMessageCallback([this](const std::vector<rosbag::MessageInstance>& frame_msg,  
-                                         const int& frame_number,
-                                         const std::vector<int>& msg_flag
-                                        ) {
-    publishClosestMessages(frame_msg,frame_number,msg_flag);
-    updateSliderAndSpinner();
+  QString folder = QFileDialog::getExistingDirectory(this, "Select Bag Folder", "");
+  if (!folder.isEmpty())
+  {
+    folder_path_->setText(folder);
+    folder_mode_ = true;
+    bag_files_.clear();
+    current_bag_index_ = -1;
 
-  });
+    QDir dir(folder); // 使用QDir类来遍历文件夹内容
+    QStringList filters;
+    filters << "*.bag";
+    dir.setNameFilters(filters);
+    QStringList bag_list = dir.entryList(QDir::Files | QDir::NoDotAndDotDot, QDir::Name);
 
-  bag_reader_->setUpdateProgressBarCallback([this](float value){
-    progress_bar_->setValue(value);
-  });
-  
+    for (const QString& bag_file : bag_list)
+      bag_files_.push_back(dir.filePath(bag_file).toStdString());
+    
+
+    if (!bag_files_.empty())
+    {
+      bag_file_path_->setText(QString::fromStdString(bag_files_[0]));
+      current_bag_label_->setText("Current Bag: N/A");
+      ROS_INFO("Found %lu bag files in folder: %s", bag_files_.size(), folder.toStdString().c_str());
+    }else {
+      ROS_WARN("No bag files found in folder: %s", folder.toStdString().c_str());
+      folder_mode_ = false;
+      current_bag_label_->setText("Current Bag: N/A");
+      bag_file_path_->clear();
+    }
+  }
 }
 
-void MyRvizPlugin::readBagFile()// 2025/9/17
+void MyRvizPlugin::readBagFile()
 {
-  static std::string last_path = "";  // 保存上一次的路径
-  std::string path = bag_file_path_->text().toStdString();
-
-  // 只有当路径非空且路径发生变化时才继续处理
-  if (!path.empty() && static_cast<void*>(const_cast<char*>(last_path.c_str())) != static_cast<void*>(const_cast<char*>(path.c_str())))
+  std::string path;
+  if (folder_mode_)// 判断是否处于文件夹模式（批量播放模式）
   {
-    recreateBagReader();
+    if (current_bag_index_ >= static_cast<int>(bag_files_.size()) - 1)// 是否已经处理完所有bag文件
+    {
+      current_bag_label_->setText("Current Bag: No more files");
+      folder_mode_ = false;
+      current_bag_index_ = -1;
+      bag_file_path_->clear();
+      return;
+    }
+    current_bag_index_++;
+    path = bag_files_[current_bag_index_];
+    bag_file_path_->setText(QString::fromStdString(path));
+  }
+  else// 单文件模式：直接获取界面上输入的文件路径
+  {
+    path = bag_file_path_->text().toStdString();
+  }
+
+  if (!path.empty())
+  {
+
+    //recreateBagReader();
     play_button_->setEnabled(false);
     stop_button_->setEnabled(false);
     frame_spinner_->setEnabled(false);
@@ -404,14 +524,20 @@ void MyRvizPlugin::readBagFile()// 2025/9/17
     play_rate_combo_->setEnabled(false);
     frame_slider_->setEnabled(false);
     select_main_radar_->setEnabled(false);
-
-    
+    current_bag_label_->setText("Current Bag: " + QString::fromStdString(path));
+    // 调用BagReader读取bag文件，同时统计各雷达的帧数
     bag_reader_->readBagFile(path, frame_count0,frame_count1,frame_count2,frame_count3, frame_count4);
-    frame_count_label_->setText("Frame Count: Radar(0) " + QString::number(frame_count0) + ";Radar(1-LT) " + QString::number(frame_count1) +
-      ";Radar(2-RT) " + QString::number(frame_count2) +";Radar(3-LB) " + QString::number(frame_count3) + ";Radar(4-RB) " + QString::number(frame_count4));
+
+    // 更新界面显示各雷达的帧数统计信息
+    frame_count_label_->setText("Frame Count: Radar(0) " + QString::number(frame_count0) + 
+                               ";Radar(1-LT) " + QString::number(frame_count1) +
+                               ";Radar(2-RT) " + QString::number(frame_count2) +
+                               ";Radar(3-LB) " + QString::number(frame_count3) + 
+                               ";Radar(4-RB) " + QString::number(frame_count4));
+
    
-   
-    //  bag_reader_->jumpToFrame(0);  // 重置当前帧为 0;取消注释这行代码开头id会重复
+    // bag_reader_->jumpToFrame(0);  // 重置当前帧为 0;取消注释这行代码开头id可能会重复
+
     if(mainRadarIndex_ == 0)
     {
         frame_spinner_->setMaximum(frame_count0);
@@ -445,12 +571,10 @@ void MyRvizPlugin::readBagFile()// 2025/9/17
     step_forward_button_->setEnabled(true);
     step_backward_button_->setEnabled(true);
     play_rate_combo_->setEnabled(true);
-    frame_slider_->setEnabled(true);;
+    frame_slider_->setEnabled(true);
     select_main_radar_->setEnabled(true);
 
-    ROS_INFO("----Bag file read and cached success: %s", path.c_str());
-
-    last_path = path;  
+    ROS_INFO("———Bag file read and cached success———: %s", path.c_str());
   }
 }
 

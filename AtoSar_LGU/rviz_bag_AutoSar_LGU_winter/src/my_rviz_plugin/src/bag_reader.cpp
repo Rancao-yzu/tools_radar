@@ -50,6 +50,10 @@ int& frameCount3, int& frameCount4)
   camera_msgs3_.clear();
   camera_msgs4_.clear();
   camera_msgs5_.clear();
+  camera_msgs6_.clear();
+  camera_msgs7_.clear();
+  camera_msgs8_.clear();
+  camera_msgs9_.clear();
 
   pointcloud_msgs0_.clear();
   pointcloud_msgs1_.clear();
@@ -70,13 +74,20 @@ int& frameCount3, int& frameCount4)
   }
 
   // 只读取指定的话题
-  std::vector<std::string> topics = {"/wf/corner_radar/lgu_data_0","/wf/corner_radar/lgu_data_1", "/wf/corner_radar/lgu_data_2", 
+  std::vector<std::string> topics = {
+    "/wf/corner_radar/lgu_data_0","/wf/corner_radar/lgu_data_1", "/wf/corner_radar/lgu_data_2", 
     "/wf/corner_radar/lgu_data_3", "/wf/corner_radar/lgu_data_4", 
+
     "/cv_camera_0/image_raw/compressed","/cv_camera_1/image_raw/compressed", "/cv_camera_2/image_raw/compressed",
     "/cv_camera_3/image_raw/compressed", "/cv_camera_4/image_raw/compressed","/cv_camera_5/image_raw/compressed",
-    "/wf/car_id6/parsed2","/corner_radar/warning_status",
-    "/wf/imu_data/parsed","/cv_camera_6/image_raw/compressed",
-    "/cv_camera_7/image_raw/compressed", "/cv_camera_8/image_raw/compressed","/cv_camera_9/image_raw/compressed",
+    "/cv_camera_6/image_raw/compressed","/cv_camera_7/image_raw/compressed", 
+    "/cv_camera_8/image_raw/compressed","/cv_camera_9/image_raw/compressed",
+
+    "/wf/car_id6/parsed2",
+    
+    "/corner_radar/warning_status",
+
+    "/wf/imu_data/parsed",
   };
   rosbag::View view(bag_, rosbag::TopicQuery(topics));
 

@@ -323,12 +323,12 @@ class BagAnalyzer:
             result['vel_y'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
             offset += 2
             
-            # int16_t velAbsX
-            result['vel_abs_x'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
+            # int16_t velAbsX--->accel
+            result['accel_x'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
             offset += 2
             
-            # int16_t velAbsY
-            result['vel_abs_y'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
+            # int16_t velAbsY--->accel
+            result['accel_y'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
             offset += 2
             
             # uint16_t fTTC
@@ -570,7 +570,7 @@ class BagAnalyzer:
                     '目标ID', '目标类型', '横向距离X', '纵向距离Y',
                     '目标长度', '目标宽度', '航向角', '动态标志',
                     '生命周期', '相对速度X(m/s)', '相对速度Y(m/s)',
-                    '绝对速度X(m/s)', '绝对速度Y(m/s)', 'TTC', 'DDCI'
+                    'accelX(m/s)', 'accelY(m/s)', 'TTC', 'DDCI'
                 ]
             elif data_type == 'egos':
                 fieldnames = [
@@ -613,8 +613,8 @@ class BagAnalyzer:
                         '生命周期': item['life_cycle'],
                         '相对速度X(m/s)': f"{item['vel_x']:.2f}",
                         '相对速度Y(m/s)': f"{item['vel_y']:.2f}",
-                        '绝对速度X(m/s)': f"{item['vel_abs_x']:.2f}",
-                        '绝对速度Y(m/s)': f"{item['vel_abs_y']:.2f}",
+                        'accelX(m/s)': f"{item['accel_x']:.2f}",
+                        'accelY(m/s)': f"{item['accel_y']:.2f}",
                         'TTC': f"{item['f_ttc']:.2f}",
                         'DDCI': f"{item['f_ddci']:.2f}",
                     })

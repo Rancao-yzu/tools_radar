@@ -832,7 +832,7 @@ def evaluate_radar_metrics(bag_dir: str,
     })
 
     # 写Excel(两个sheet)
-    excel_name = f"./OUT/radar_{args.radar_id}.xlsx"
+    excel_name = f"./OUTKPI/radar_{args.radar_id}.xlsx"
 
     out_xlsx = os.path.join(base_dir, excel_name)
     write_xlsx(out_xlsx, summary_rows, by_bag_rows, all_timestamp_rows) 

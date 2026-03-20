@@ -70,12 +70,6 @@ class BagAnalyzer:
 
     def run(self):
         try:
-            # 创建输出目录
-            current_dir = os.getcwd()
-            gt_dir = os.path.join(current_dir, "OUT")
-            full_output_dir = os.path.join(gt_dir, self.output_folder)
-            os.makedirs(full_output_dir, exist_ok=True)
-            
             # 计算总任务数
             extract_types = sum(1 for k, v in self.extract_options.items() if v)
             total_files = len(self.bag_files)
@@ -560,7 +554,7 @@ class BagAnalyzer:
         
         # 创建输出目录
         current_dir = os.getcwd()
-        gt_dir = os.path.join(current_dir, "OUT")
+        gt_dir = os.path.join(current_dir, "OUTcsv")
         full_output_dir = os.path.join(gt_dir, self.output_folder)
         os.makedirs(full_output_dir, exist_ok=True)
         

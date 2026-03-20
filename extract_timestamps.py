@@ -424,7 +424,7 @@ class MainWindow(QMainWindow):
             return
             
         # 创建输出目录
-        output_dir = "OUT"
+        output_dir = "OUTADAS"
         try:
             os.makedirs(output_dir, exist_ok=True)
         except Exception as e:

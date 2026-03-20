@@ -144,7 +144,7 @@ class RadarEvalGUI:
             messagebox.showerror("错误", "帧容差和防抖间隙必须为正整数")
             return
                     
-        output_dir = os.path.join(os.getcwd(), "OUT")
+        output_dir = os.path.join(os.getcwd(), "OUTKPI")
         try:
             os.makedirs(output_dir, exist_ok=True)
         except Exception as e:

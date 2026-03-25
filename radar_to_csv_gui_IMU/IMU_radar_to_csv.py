@@ -10,7 +10,6 @@ IMU数据转CSV工具 - Python版本
 """
 
 import os
-import sys
 import re
 import csv
 from datetime import datetime
@@ -18,12 +17,11 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import threading
 import queue
-import time
+
 
 # ROS相关导入
-import rospy
 import rosbag
-import genpy
+
 
 class ImuToCSVApp:
     def __init__(self, root):
@@ -39,27 +37,36 @@ class ImuToCSVApp:
         # IMU消息字段映射表
  
         self.field_mapping = {
-            'dut_timestamp': 'timestamp',                     # 时间戳（Unix时间，精确到微秒）
+            'timestamp': 'timestamp',                     # 时间戳（Unix时间，精确到微秒）
             
             # 目标车辆信息
-            'Target1Distance': 'Target1Distance',             # 目标车与本车的距离（米）
-            'Target1HeadingDiff': 'Target1HeadingDiff',        # 目标车与本车的航向角差（度）
-            'Target1RelativeSpeed': 'Target1RelativeSpeed',    # 目标车相对于本车的速度（米/秒）
-            'Target1PitchAngle': 'Target1PitchAngle',          # 目标车俯仰角（度）
-            'Target1RollAngle': 'Target1RollAngle',            # 目标车横滚角（度）
+            'GT_Dis': 'Target1Distance',             # 目标车与本车的距离（米）
+            'GT_DisX': 'Target1LngDistance',         #纵向距离
+            'GT_DisY': 'Target1LatDistance',         # 横向距离
 
-            'positionX': 'Target1CoorX',                       # 目标车在坐标系中的X坐标
-            'positionY': 'Target1CoorY',                       # 目标车在坐标系中的Y坐标
-            'Target1Angle': 'Target1Angle',                    # 目标车相对本车的角度（度）
-            'Target1SpeedKPH': 'Target1SpeedKPH',              # 目标车速度（千米/小时）
+            'GT_HeadingDiff': 'Target1HeadingDiff',        # 目标车与本车的航向角差（度）
+            'GT_Angle': 'Target1Angle',                    # 目标车相对本车的角度（度）
+            'GT_PitchAngle': 'Target1PitchAngle',          # 目标车俯仰角（度）
+            'GT_RollAngle': 'Target1RollAngle',            # 目标车横滚角（度）
 
-            
+            'GT_X': 'Target1CoorX',                       # 目标车在坐标系中的X坐标
+            'GT_Y': 'Target1CoorY',                       # 目标车在坐标系中的Y坐标
+
+            'GT_Rel_V': 'Target1RelativeSpeed',            # 目标车相对于本车的速度（米/秒）
+            'GT_V': 'Target1SpeedKPH',                     # 目标车绝对速度（千米/小时）,已转换为米/秒
+            'GT_Vx': 'Target1LngSpeedKPH',                 # 纵向速度，,已转换为米/秒
+            'GT_Vy': 'Target1LatSpeedms',                  # 横向速度，已转换为米/秒
+            'GT_AcceX': 'Target1AcceX',                    # 目标车对地纵向加速度（米/秒²）
+            'GT_AcceY': 'Target1AcceY',                    # 目标车对地横向加速度（米/秒²）
+            'GT_RelAcceX': 'Target1RelLngAcc',
+            'GT_RelAcceY': 'Target1RelLatAcc',
+
             # 自车信息
-            'Ego1SpeedKPH': 'Ego1SpeedKPH',                    # 自车速度（千米/小时）
-            'positionEgoYawRate': 'Ego1YawRate',               # 自车横摆角速度（度/秒）
-            'Ego1LngAcce': 'Ego1LngAcce',                      # 自车纵向加速度（米/秒²）
-            'Ego1LatAcce': 'Ego1LatAcce',                      # 自车横向加速度（米/秒²）
-            'Ego1Heading': 'Ego1Heading'                       # 自车航向角（度）
+            'E_V': 'Ego1SpeedKPH',                        # 自车速度（千米/小时）,已转换为米/秒
+            'E_YawRate': 'Ego1YawRate',                   # 自车横摆角速度（度/秒）
+            'E_AcceX': 'Ego1LngAcce',                     # 自车纵向加速度（米/秒²）
+            'E_AcceY': 'Ego1LatAcce',                     # 自车横向加速度（米/秒²）
+            'E_Heading': 'Ego1Heading'                     # 自车航向角（度）
         }
         
         self.setup_ui()
@@ -258,30 +265,6 @@ class ImuToCSVApp:
         finally:
             self.on_processing_complete()
     
-    def extract_datetime_from_filename(self, filename):
-        """从文件名中提取日期和时间"""
-        # 匹配格式: *_YYYY-MM-DD-HH-MM-SS_*.bag
-        pattern = r'.*_(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})_.*'
-        match = re.match(pattern, filename)
-        
-        if match:
-            year, month, day, hour, minute, second = match.groups()
-            date_str = f"{year}{month}{day}"
-            time_str = f"{hour}{minute}{second}"
-            return date_str, time_str
-        else:
-            # 尝试其他格式
-            pattern2 = r'.*_(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_.*'
-            match2 = re.match(pattern2, filename)
-            
-            if match2:
-                year, month, day, hour, minute, second = match2.groups()
-                date_str = f"{year}{month}{day}"
-                time_str = f"{hour}{minute}{second}"
-                return date_str, time_str
-        
-        return "unknown_date", "unknown_time"
-    
     def has_non_zero_fields(self, row):
         """检查行中是否有非零字段（除了timestamp）"""
         # 跳过timestamp字段（第一个字段）
@@ -295,31 +278,43 @@ class ImuToCSVApp:
         return False
     
     def get_message_field(self, msg, field_name):
-        """通用方式获取消息字段值"""
+        """通用方式获取消息字段值，并处理速度单位转换"""
         try:
-            # 尝试直接获取属性
             if hasattr(msg, field_name):
-                return getattr(msg, field_name)
-            
-            # 尝试在header中查找
-            if hasattr(msg, 'header') and hasattr(msg.header, field_name):
-                return getattr(msg.header, field_name)
-            
-            # 尝试使用ROS消息的序列化方法
-            if hasattr(msg, '__slots__'):
+                value = getattr(msg, field_name)
+            elif hasattr(msg, 'header') and hasattr(msg.header, field_name):
+                value = getattr(msg.header, field_name)
+            elif hasattr(msg, '__slots__'):
                 for slot in msg.__slots__:
                     if slot == field_name:
-                        return getattr(msg, slot)
+                        value = getattr(msg, slot)
+                        break
+                else:
+                    value = 0
+            else:
+                value = 0
             
-            return 0  # 默认值
-        except:
-            return 0  # 默认值
-    
+            speed_fields = {
+                'Target1SpeedKPH',  
+                'Target1LngSpeedKPH',
+                'Ego1SpeedKPH'
+            }
+            
+            if field_name in speed_fields:
+                try:
+                    value = float(value) / 3.6
+                except (ValueError, TypeError):
+                    value = 0
+            
+            return value
+            
+        except Exception as e:
+            return 0
+
     def process_bag(self, bag_path, vehicle_id, output_folder, file_suffix, filter_zeros):
         """处理单个bag文件"""
         try:
             bag_name = os.path.splitext(os.path.basename(bag_path))[0]
-            date_str, time_str = self.extract_datetime_from_filename(bag_name)
             
             # 创建输出目录 - 改为IMUs
             imu_dir = "IMUs"
@@ -327,7 +322,7 @@ class ImuToCSVApp:
             os.makedirs(full_output_dir, exist_ok=True)
             
             # 生成CSV文件名
-            csv_filename = f"{vehicle_id}_IMU_{date_str}_{time_str}_{file_suffix}.csv"
+            csv_filename = f"{bag_name}_{file_suffix}.csv"
             csv_path = os.path.join(full_output_dir, csv_filename)
             
             self.log(f"创建CSV文件: {csv_path}")
@@ -370,9 +365,7 @@ class ImuToCSVApp:
                         # 尝试转换为 float 并保留最多5位小数
                         try:
                             num = float(value)
-                            # 使用 round 保留5位小数（注意：round(1.0, 5) -> 1.0，不会变成字符串）
                             rounded_value = round(num, 5)
-                            # 可选：如果希望整数不带小数点，可进一步处理，但 CSV 通常接受 1.0
                             row.append(rounded_value)
                         except (ValueError, TypeError):
                             row.append(0)
@@ -387,7 +380,7 @@ class ImuToCSVApp:
                     saved_count += 1
                 
                 # 每处理100条消息打印一次进度
-                if message_count % 100 == 0:
+                if message_count % 1000 == 0:
                     self.log(f"  已处理 {message_count} 条消息，保存 {saved_count} 条")
             
             csv_file.close()
@@ -422,11 +415,6 @@ class ImuToCSVApp:
 
 def main():
     """主函数"""
-    # 初始化ROS节点
-    try:
-        rospy.init_node('imu_to_csv_py', anonymous=True)
-    except:
-        pass
     
     # 创建GUI
     root = tk.Tk()

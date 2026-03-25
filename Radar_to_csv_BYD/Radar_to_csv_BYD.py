@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
 """
-雷达Bag文件目标信息提取工具 -36字节目标结构体
+雷达Bag文件信息提取工具 - 完整版
 
-功能描述：
-在解析每个数据帧时，程序首先读取8字节的帧头信息，其中包括目标数量（sgu_num）。
-由于每个目标信息固定占用36字节，程序通过公式 8 + (sgu_num * 36) 计算出该帧的预期总长度。
-然后按顺序解析每个36字节的目标结构体，提取其中信息。
+功能：
+- 目标信息（36字节结构体）
+- 自车信息（60字节结构体） 
+- 点云信息（16字节结构体）
+支持三种数据的选择性提取
 """
 import rosbag
 import struct
@@ -14,26 +15,21 @@ import csv
 import os
 import sys
 import re
-from datetime import datetime
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QPushButton, QLabel, QLineEdit, 
                            QFileDialog, QMessageBox, QProgressBar,
-                           QSpinBox, QGroupBox, QFormLayout, QTextEdit)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+                           QSpinBox, QGroupBox, QFormLayout, QTextEdit,
+                           QCheckBox, QComboBox)
 
-class BagAnalyzerThread(QThread):
-    """后台分析线程"""
-    progress_update = pyqtSignal(int, int, str, str)  # 当前, 总数, 文件名, 状态
-    analysis_done = pyqtSignal(list, list)  # 所有结果, CSV路径列表
-    error_occurred = pyqtSignal(str)  # 错误信息
-
-    def __init__(self, bag_files, frame_header, vehicle_id, custom_field, output_folder):
-        super().__init__()
+class BagAnalyzer:
+    def __init__(self, bag_files, frame_header, vehicle_id, custom_field, 
+                 output_folder, extract_options):
         self.bag_files = bag_files
         self.frame_header = frame_header
         self.vehicle_id = vehicle_id
         self.custom_field = custom_field
         self.output_folder = output_folder
+        self.extract_options = extract_options  # 新增：提取选项
         
         # 定义4个雷达话题
         self.radar_topics = [
@@ -43,54 +39,100 @@ class BagAnalyzerThread(QThread):
             ("/wf/corner_radar/lgu_data_4", "WFRARR"),   # 后右雷达
         ]
         
-        # 存储每个雷达的目标数据
+        # 存储不同类型的数据
         self.radar_targets = {
-            "WFRAFL": [],
-            "WFRAFR": [],
-            "WFRARL": [],
-            "WFRARR": [],
+            "WFRAFL": [],"WFRAFR": [],
+            "WFRARL": [],"WFRARR": [],
+        }
+        
+        self.radar_egos = {
+            "WFRAFL": [],"WFRAFR": [],
+            "WFRARL": [],"WFRARR": [],
+        }
+        
+        self.radar_dots = {
+            "WFRAFL": [],"WFRAFR": [],
+            "WFRARL": [],"WFRARR": [],
         }
         self.csv_files = []  # 存储生成的CSV文件路径
+        
+        # 添加进度回调函数
+        self.progress_callback = None
+        self.done_callback = None
+        self.error_callback = None
+
+    def set_callbacks(self, progress_callback, done_callback, error_callback):
+        """设置回调函数替代信号"""
+         # 保存这三个方法，以便后续调用
+        self.progress_callback = progress_callback
+        self.done_callback = done_callback
+        self.error_callback = error_callback
 
     def run(self):
         try:
-            # 创建输出目录
-            current_dir = os.getcwd()
-            gt_dir = os.path.join(current_dir, "OUT")
-            full_output_dir = os.path.join(gt_dir, self.output_folder)
-            os.makedirs(full_output_dir, exist_ok=True)
-            
-            # 初始化进度
+            # 计算总任务数
+            extract_types = sum(1 for k, v in self.extract_options.items() if v)
             total_files = len(self.bag_files)
             total_radars = len(self.radar_topics)
-            total_tasks = total_files * total_radars
+            total_tasks = total_files * total_radars * extract_types
             
             task_count = 0
             for i, bag_file in enumerate(self.bag_files, 1):
                 bag_name = os.path.basename(bag_file)
                 
                 for topic, radar_name in self.radar_topics:
-                    task_count += 1
-                    status = f"处理{radar_name}..."
-                    self.progress_update.emit(task_count, total_tasks, bag_name, status)
+                    if self.progress_callback:
+                        self.progress_callback(task_count, total_tasks, bag_name, f"处理{radar_name}...")
                     
                     # 处理每个雷达话题
                     self.process_radar_topic(bag_file, bag_name, topic, radar_name)
+                    task_count += extract_types
             
-            # 为每个雷达生成CSV文件
-            for radar_name in self.radar_targets.keys():
-                if self.radar_targets[radar_name]:
-                    self.progress_update.emit(task_count, total_tasks, "", f"生成{radar_name}CSV...")
-                    csv_file = self.save_radar_to_csv(radar_name)
-                    if csv_file:
-                        self.csv_files.append(csv_file)
-                        task_count += 1
-                        self.progress_update.emit(task_count, total_tasks, "", f"{radar_name}CSV完成")
+                # 根据选项生成CSV文件
+                if self.extract_options.get('targets', False):
+                    for radar_name in self.radar_targets.keys():
+                        if self.radar_targets[radar_name]:
+                            csv_file = self.save_radar_to_csv(radar_name, 'targets')
+                            if csv_file:
+                                self.csv_files.append(csv_file)
+                                task_count += 1
+                                if self.progress_callback:
+                                    self.progress_callback(task_count, total_tasks, "", f"{radar_name}目标CSV完成")
+                
+                if self.extract_options.get('egos', False):
+                    for radar_name in self.radar_egos.keys():
+                        if self.radar_egos[radar_name]:
+                            csv_file = self.save_radar_to_csv(radar_name, 'egos')
+                            if csv_file:
+                                self.csv_files.append(csv_file)
+                                task_count += 1
+                                if self.progress_callback:
+                                    self.progress_callback(task_count, total_tasks, "", f"{radar_name}自车CSV完成")
+                
+                if self.extract_options.get('dots', False):
+                    for radar_name in self.radar_dots.keys():
+                        if self.radar_dots[radar_name]:
+                            csv_file = self.save_radar_to_csv(radar_name, 'dots')
+                            if csv_file:
+                                self.csv_files.append(csv_file)
+                                task_count += 1
+                                if self.progress_callback:
+                                    self.progress_callback(task_count, total_tasks, "", f"{radar_name}点云CSV完成")
+
+                # 清空数据准备下一个bag
+                self.radar_targets = {name: [] for name in self.radar_targets.keys()}
+                self.radar_egos = {name: [] for name in self.radar_egos.keys()}
+                self.radar_dots = {name: [] for name in self.radar_dots.keys()}
             
-            self.analysis_done.emit([], self.csv_files)
+            if self.done_callback:
+                self.progress_callback(total_tasks, total_tasks, "", f"完成")
+                self.done_callback([], self.csv_files)
             
         except Exception as e:
-            self.error_occurred.emit(str(e))
+            if self.error_callback:
+                self.error_callback(str(e))
+            import traceback
+            traceback.print_exc()
 
     def process_radar_topic(self, bag_file, bag_name, topic, radar_name):
         """处理单个雷达话题"""
@@ -128,35 +170,87 @@ class BagAnalyzerThread(QThread):
                 sgu_num = struct.unpack_from('<B', raw_bytes, offset)[0]
                 offset += 1
                 
-                # uint8_t padding
-                padding = struct.unpack_from('<B', raw_bytes, offset)[0]
+                # uint8_t isCarSpdOOR
+                is_car_spd_oor = struct.unpack_from('<B', raw_bytes, offset)[0]
                 offset += 1
                 
-                # 现在 offset = 8 字节，正好是 objTrans 数组的开始，验证数据长度是否足够
-                expected_length = 8 + (sgu_num * 36)  # 头部8字节 + 目标数据
-                if len(raw_bytes) < expected_length:
-                    continue
+                # ========== 目标解析 ==========
+                if self.extract_options.get('targets', False):
+                    expected_length = 8 + (sgu_num * 36)  # 头部8字节 + 目标数据
+                    if len(raw_bytes) >= expected_length:
+                        target_offset = 8  # 目标从第8字节开始
+                        target_count = min(sgu_num, 16) #MAX_size_Sgu = 16
+                        for obj_idx in range(target_count):
+                            if target_offset + 36 <= len(raw_bytes):
+                                target_info = self.parse_single_target(
+                                    raw_bytes[target_offset:target_offset+36]
+                                )
+                                if target_info:
+                                    target_info.update({
+                                        'bag_file': bag_name,
+                                        'radar_name': radar_name,
+                                        'topic': topic,
+                                        'frame_id': frame_id,
+                                        'lgu_num': lgu_num,
+                                        'sgu_num': sgu_num,
+                                        'target_index': obj_idx + 1,
+                                        'timestamp': t.to_sec(),
+                                    })
+                                    self.radar_targets[radar_name].append(target_info)
+                                target_offset += 36
                 
-                # 解析每个目标
-                target_count = min(sgu_num, 16)  # 最多16个目标
-                for obj_idx in range(target_count):
-                    if offset + 36 <= len(raw_bytes):
-                        target_info = self.parse_single_target(raw_bytes[offset:offset+36])
-                        if target_info:
-                            # 添加帧信息和bag文件信息
-                            target_info.update({
+                # ========== 中间块解析 (144字节) ==========
+                middle_offset = 8 + (16 * 36)  #头部解析+目标解析
+                
+                # 自车信息 (60字节)
+                if self.extract_options.get('egos', False):
+                    if middle_offset + 60 <= len(raw_bytes):
+                        ego_info = self.parse_ego_info(
+                            raw_bytes[middle_offset:middle_offset+60]
+                        )
+                        if ego_info:
+                            ego_info.update({
                                 'bag_file': bag_name,
                                 'radar_name': radar_name,
                                 'topic': topic,
                                 'frame_id': frame_id,
                                 'lgu_num': lgu_num,
                                 'sgu_num': sgu_num,
-                                'padding': padding,
-                                'target_index': obj_idx + 1,
                                 'timestamp': t.to_sec(),
                             })
-                            self.radar_targets[radar_name].append(target_info)
-                        offset += 36  # 每个目标36字节
+                            self.radar_egos[radar_name].append(ego_info)
+                
+                # 校准信息 (12字节)
+                calib_offset = middle_offset + 60
+                
+                # ADAS信息 (12字节)
+                adas_offset = calib_offset + 12
+                
+                # BLD信息 (60字节)
+                bld_offset = adas_offset + 12
+                
+                # ========== 点云解析 ==========
+                if self.extract_options.get('dots', False):
+                    dots_offset = bld_offset + 60  # 728 字节偏移
+                    if len(raw_bytes) >= dots_offset + (lgu_num * 16):
+                        for dot_idx in range(lgu_num):
+                            dot_offset = dots_offset + (dot_idx * 16)
+                            if dot_offset + 16 <= len(raw_bytes):
+                                dot_info = self.parse_dot_info(
+                                    raw_bytes[dot_offset:dot_offset+16]
+                                )
+                                if dot_info:
+                                    dot_info.update({
+                                        'bag_file': bag_name,
+                                        'radar_name': radar_name,
+                                        'topic': topic,
+                                        'frame_id': frame_id,
+                                        'lgu_num': lgu_num,
+                                        'sgu_num': sgu_num,
+                                        'dot_index': dot_idx + 1,
+                                        'timestamp': t.to_sec(),
+                                    })
+                                    self.radar_dots[radar_name].append(dot_info)
             
             bag.close()
                 
@@ -165,138 +259,8 @@ class BagAnalyzerThread(QThread):
             import traceback
             traceback.print_exc()
 
-    def check_bag_for_valid_frames(self, bag_file):
-        """检查bag文件中是否有匹配帧头的消息"""
-        try:
-            bag = rosbag.Bag(bag_file, 'r')
-            has_valid = False
-            
-            # 检查所有雷达话题
-            for topic, radar_name in self.radar_topics:
-                for msg_topic, msg, t in bag.read_messages(topics=[topic]):
-                    if not hasattr(msg, 'outputData'):
-                        continue
-                        
-                    raw_bytes = bytes(msg.outputData)
-                    
-                    # 检查最小长度
-                    if len(raw_bytes) < 8:
-                        continue
-
-                    # 检查帧头
-                    frame_header_bytes = struct.unpack_from('<H', raw_bytes, 0)[0]
-                    if frame_header_bytes == self.frame_header:
-                        has_valid = True
-                        break
-                
-                if has_valid:
-                    break
-            
-            bag.close()
-            return has_valid
-            
-        except Exception as e:
-            print(f"检查文件 {bag_file} 时出错: {e}")
-            return False
-
-    def save_radar_to_csv(self, radar_name):
-        """保存雷达数据到CSV，命名"""
-        targets = self.radar_targets[radar_name]
-        if not targets:
-            print(f"{radar_name} 没有找到目标数据")
-            return None
-        
-        # 从第一个bag文件中提取日期和时间
-        first_target = targets[0]
-        bag_name = first_target['bag_file']
-        bag_name_no_ext = os.path.splitext(bag_name)[0]
-
-        # 从bag文件名中提取日期和时间
-        date = "unknown_date"
-        time = "unknown_time"
-        
-        patterns = [
-            # 格式: *YYYY-MM-DD-HH-MM-SS*
-            r'.*(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2}).*',
-            # 格式: *YYYYMMDD_HHMMSS*
-            r'.*(\d{8})_(\d{6}).*',
-            # 格式: *YYYY_MM_DD_HH_MM_SS*
-            r'.*(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2}).*',
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, bag_name_no_ext)
-            if match:
-                if len(match.groups()) == 6:
-                    # YYYY-MM-DD-HH-MM-SS 格式
-                    date = f"{match.group(1)}{match.group(2)}{match.group(3)}"
-                    time = f"{match.group(4)}{match.group(5)}{match.group(6)}"
-                elif len(match.groups()) == 2:
-                    # YYYYMMDD_HHMMSS 格式
-                    date = match.group(1)
-                    time = match.group(2)
-                break
-        
-        
-        # 创建输出目录
-        current_dir = os.getcwd()
-        gt_dir = os.path.join(current_dir, "OUT")
-        full_output_dir = os.path.join(gt_dir, self.output_folder)
-        os.makedirs(full_output_dir, exist_ok=True)
-        
-        # 生成CSV文件名
-        csv_filename = f"{self.vehicle_id}_{radar_name}_{date}_{time}_{self.custom_field}.csv"
-        output_csv = os.path.join(full_output_dir, csv_filename)
-        
-        with open(output_csv, 'w', newline='', encoding='utf-8-sig') as csvfile:
-            fieldnames = [
-                '序号',
-                '帧ID',
-                '帧时间戳',
-                '目标索引',
-                '目标ID',
-                '目标类型',
-                '横向距离X(m)',
-                '纵向距离Y(m)',
-                '目标长度(m)',
-                '目标宽度(m)',
-                '航向角(deg)',
-                '动态标志',
-                '生命周期',
-                '相对速度X(m/s)',
-                '相对速度Y(m/s)',
-                '绝对速度X(m/s)',
-                '绝对速度Y(m/s)',
-            ]
-            
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            
-            for i, target in enumerate(targets, 1):
-                writer.writerow({
-                    '序号': i,
-                    '帧ID': target['frame_id'],
-                    '帧时间戳': f"{target['timestamp']:.6f}",
-                    '目标索引': target['target_index'],
-                    '目标ID': target['obj_id'],
-                    '目标类型': target['obj_type'],
-                    '横向距离X(m)': f"{target['dist_x']:.2f}",
-                    '纵向距离Y(m)': f"{target['dist_y']:.2f}",
-                    '目标长度(m)': f"{target['length']:.2f}",
-                    '目标宽度(m)': f"{target['width']:.2f}",
-                    '航向角(deg)': f"{target['yaw_ang']:.2f}",
-                    '动态标志': target['dyn_flg'],
-                    '生命周期': target['life_cycle'],
-                    '相对速度X(m/s)': f"{target['vel_x']:.2f}",
-                    '相对速度Y(m/s)': f"{target['vel_y']:.2f}",
-                    '绝对速度X(m/s)': f"{target['vel_abs_x']:.2f}",
-                    '绝对速度Y(m/s)': f"{target['vel_abs_y']:.2f}",
-                })
-        
-        return output_csv
-
     def parse_single_target(self, obj_data):
-        """解析单个目标结构体 - 36字节版本"""
+        """解析单个目标结构体 (36字节)"""
         try:
             if len(obj_data) < 36:
                 return None
@@ -304,103 +268,416 @@ class BagAnalyzerThread(QThread):
             offset = 0
             result = {}
             
-            # 1-2: int16_t distX (m) - 压缩：实际值 = 值/100
+            # int16_t distX
             result['dist_x'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
             offset += 2
             
-            # 3-4: int16_t distY (m) - 压缩：实际值 = 值/100
+            # int16_t distY
             result['dist_y'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
             offset += 2
             
-            # 5-6: uint16_t length (m) - 压缩：实际值 = 值/100
+            # uint16_t length
             result['length'] = struct.unpack_from('<H', obj_data, offset)[0] / 100.0
             offset += 2
             
-            # 7-8: uint16_t width (m) - 压缩：实际值 = 值/100
+            # uint16_t width
             result['width'] = struct.unpack_from('<H', obj_data, offset)[0] / 100.0
             offset += 2
             
-            # 9-10: int16_t yawAng (deg) - 压缩：实际值 = 值/100
+            # int16_t yawAng
             result['yaw_ang'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
             offset += 2
             
-            # 11: uint8_t objID
+            # uint8_t objID
             result['obj_id'] = struct.unpack_from('<B', obj_data, offset)[0]
             offset += 1
             
-            # 12: uint8_t objType
-            obj_type_raw = struct.unpack_from('<B', obj_data, offset)[0]
-            result['obj_type'] = obj_type_raw
+            # uint8_t objType
+            result['obj_type'] = struct.unpack_from('<B', obj_data, offset)[0]
             offset += 1
             
-            # 13: uint8_t dynFlg
+            # uint8_t dynFlg
             result['dyn_flg'] = struct.unpack_from('<B', obj_data, offset)[0]
             offset += 1
             
-            # 14: int8_t objBsdWarningFlag
-            result['bsd_warning'] = struct.unpack_from('<b', obj_data, offset)[0]
-            offset += 1
+            # 跳过8个警告标志 (objBsdWarningFlag ~ objFctbWarningFlag)
+            offset += 8
             
-            # 15: int8_t objLcaWarningFlag
-            result['lca_warning'] = struct.unpack_from('<b', obj_data, offset)[0]
-            offset += 1
-            
-            # 16: int8_t objDowWarningFlag
-            result['dow_warning'] = struct.unpack_from('<b', obj_data, offset)[0]
-            offset += 1
-            
-            # 17: int8_t objRcwWarningFlag
-            result['rcw_warning'] = struct.unpack_from('<b', obj_data, offset)[0]
-            offset += 1
-            
-            # 18: int8_t objRctaWarningFlag
-            result['rcta_warning'] = struct.unpack_from('<b', obj_data, offset)[0]
-            offset += 1
-            
-            # 19: int8_t objRctbWarningFlag
-            result['rctb_warning'] = struct.unpack_from('<b', obj_data, offset)[0]
-            offset += 1
-            
-            # 20: uint8_t referPt
+            # uint8_t referPt
             result['refer_pt'] = struct.unpack_from('<B', obj_data, offset)[0]
             offset += 1
             
-            # 21-22: uint16_t lifeCycle
-            result['life_cycle'] = struct.unpack_from('<H', obj_data, offset)[0]
+            # uint8_t lifeCycle
+            result['life_cycle'] = struct.unpack_from('<B', obj_data, offset)[0]
+            offset += 1
+            
+            # uint8_t historyMovDist
+            result['objTypeProp'] = struct.unpack_from('<B', obj_data, offset)[0]
+            offset += 1
+            
+            # int16_t velX
+            result['velAbsX'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
             offset += 2
             
-            # 23-24: int16_t velX (m/s) - 压缩：实际值 = 值/100
-            result['vel_x'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
+            # int16_t velY
+            result['velAbsY'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
             offset += 2
             
-            # 25-26: int16_t velY (m/s) - 压缩：实际值 = 值/100
-            result['vel_y'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
+            # int16_t velAbsX--->accel
+            result['accelAbsX'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
             offset += 2
             
-            # 27-28: int16_t velAbsX (m/s) - 压缩：实际值 = 值/100
-            result['vel_abs_x'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
+            # int16_t velAbsY--->accel
+            result['accelAbsY'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
             offset += 2
             
-            # 29-30: int16_t velAbsY (m/s) - 压缩：实际值 = 值/100
-            result['vel_abs_y'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
-            offset += 2
-            
-            # 31-32: uint16_t historyMovDist (m) - 压缩：实际值 = 值/100
-            result['history_mov_dist'] = struct.unpack_from('<H', obj_data, offset)[0] / 100.0
-            offset += 2
-            
-            # 33-34: uint16_t fTTC (s) - 压缩：实际值 = 值/100
+            # uint16_t fTTC
             result['f_ttc'] = struct.unpack_from('<H', obj_data, offset)[0] / 100.0
             offset += 2
-            
-            # 35-36: int16_t fDDCI - 压缩：实际值 = 值/100
-            result['f_ddci'] = struct.unpack_from('<h', obj_data, offset)[0] / 100.0
-            offset += 2
+
+            result['existProb'] = struct.unpack_from('<B', obj_data, offset)[0]
+            offset += 1
+
+            result['obstProbability'] = struct.unpack_from('<B', obj_data, offset)[0]
+            offset += 1
             
             return result
             
         except Exception as e:
             return None
+
+    def parse_ego_info(self, ego_data):
+        """解析自车信息 (rbExt_CEnvDataPacket - 60字节)"""
+        try:
+            if len(ego_data) < 60:
+                return None
+            
+            offset = 0
+            result = {}
+            
+            # float actual_spd
+            result['actual_spd'] = struct.unpack_from('<f', ego_data, offset)[0]
+            offset += 4
+            
+            # float yaw_rate
+            result['yaw_rate'] = struct.unpack_from('<f', ego_data, offset)[0]
+            offset += 4
+            
+            # float lat_accel
+            result['lat_accel'] = struct.unpack_from('<f', ego_data, offset)[0]
+            offset += 4
+            
+            # float long_accel
+            result['long_accel'] = struct.unpack_from('<f', ego_data, offset)[0]
+            offset += 4
+            
+            # unsigned char yaw_rate_sign
+            result['yaw_rate_sign'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            
+            # unsigned char actual_gear
+            result['actual_gear'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            
+            # unsigned char turn_light_left
+            result['turn_light_left'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            
+            # unsigned char turn_light_right
+            result['turn_light_right'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            
+            # 4个开门标志
+            result['open_door_left_top'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            result['open_door_right_top'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            result['open_door_left_bottom'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            result['open_door_right_bottom'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            
+            # 4个有效标志
+            result['actual_spd_valid'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            result['yaw_rate_valid'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            result['lat_accel_valid'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            result['long_accel_valid'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            
+            # float steer_angle
+            result['steer_angle'] = struct.unpack_from('<f', ego_data, offset)[0]
+            offset += 4
+            
+            # 4个轮速
+            result['fl_whl_spd'] = struct.unpack_from('<f', ego_data, offset)[0]
+            offset += 4
+            result['fr_whl_spd'] = struct.unpack_from('<f', ego_data, offset)[0]
+            offset += 4
+            result['rl_whl_spd'] = struct.unpack_from('<f', ego_data, offset)[0]
+            offset += 4
+            result['rr_whl_spd'] = struct.unpack_from('<f', ego_data, offset)[0]
+            offset += 4
+            
+            # 4个轮速有效标志
+            result['fl_whl_spd_valid'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            result['fr_whl_spd_valid'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            result['rl_whl_spd_valid'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            result['rr_whl_spd_valid'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            
+            # unsigned char steer_angle_sign
+            result['steer_angle_sign'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            
+            # unsigned char wiper_gear
+            result['wiper_gear'] = struct.unpack_from('<B', ego_data, offset)[0]
+            offset += 1
+            
+            # unsigned char padding[2]
+            offset += 2
+            
+            # unsigned int mileage
+            result['mileage'] = struct.unpack_from('<I', ego_data, offset)[0]
+            
+            return result
+            
+        except Exception as e:
+            print(f"解析自车信息错误: {e}")
+            return None
+
+    def parse_dot_info(self, dot_data):
+        """解析点云信息 (dotOutStrunct - 16字节)"""
+        try:
+            if len(dot_data) < 16:
+                return None
+            
+            offset = 0
+            result = {}
+            
+            # unsigned short dist
+            result['dist'] = struct.unpack_from('<H', dot_data, offset)[0] / 100.0
+            offset += 2
+            
+            # short vel
+            result['vel'] = struct.unpack_from('<h', dot_data, offset)[0] / 100.0
+            offset += 2
+            
+            # short angAzi
+            result['ang_azi'] = struct.unpack_from('<h', dot_data, offset)[0] / 100.0
+            offset += 2
+            
+            # short angEle
+            result['ang_ele'] = struct.unpack_from('<h', dot_data, offset)[0] / 100.0
+            offset += 2
+            
+            # char power
+            result['power'] = struct.unpack_from('<b', dot_data, offset)[0]
+            offset += 1
+            
+            # char snr
+            result['snr'] = struct.unpack_from('<b', dot_data, offset)[0]
+            offset += 1
+            
+            # char RCS
+            result['rcs'] = struct.unpack_from('<b', dot_data, offset)[0]
+            offset += 1
+            
+            # unsigned char idxLocPeer
+            result['idx_loc_peer'] = struct.unpack_from('<B', dot_data, offset)[0]
+            offset += 1
+            
+            # unsigned char thetaQly
+            result['theta_qly'] = struct.unpack_from('<B', dot_data, offset)[0]
+            offset += 1
+            
+            # unsigned char phiQly
+            result['phi_qly'] = struct.unpack_from('<B', dot_data, offset)[0]
+            offset += 1
+            
+            # unsigned char dvQly
+            result['dv_qly'] = struct.unpack_from('<B', dot_data, offset)[0]
+            offset += 1
+            
+            # unsigned char is_azi_amb_detected
+            result['is_azi_amb_detected'] = struct.unpack_from('<B', dot_data, offset)[0]
+            
+            return result
+            
+        except Exception as e:
+            return None
+
+    def save_radar_to_csv(self, radar_name, data_type):
+        """保存雷达数据到CSV"""
+        if data_type == 'targets':
+            data_list = self.radar_targets[radar_name]
+            type_suffix = "TARGETS"
+        elif data_type == 'egos':
+            data_list = self.radar_egos[radar_name]
+            type_suffix = "EGO"
+        elif data_type == 'dots':
+            data_list = self.radar_dots[radar_name]
+            type_suffix = "DOTS"
+        else:
+            return None
+        
+        if not data_list:
+            print(f"{radar_name} 没有找到{type_suffix}数据")
+            return None
+        
+        # 从文件名提取日期时间
+        first_item = data_list[0]
+        bag_name = first_item['bag_file']
+        bag_name_no_ext = os.path.splitext(bag_name)[0]
+
+        date = "unknown_date"
+        time = "unknown_time"
+        
+        patterns = [
+            r'.*(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2}).*',
+            r'.*(\d{8})_(\d{6}).*',
+            r'.*(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2}).*',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, bag_name_no_ext)
+            if match:
+                if len(match.groups()) == 6:
+                    date = f"{match.group(1)}{match.group(2)}{match.group(3)}"
+                    time = f"{match.group(4)}{match.group(5)}{match.group(6)}"
+                elif len(match.groups()) == 2:
+                    date = match.group(1)
+                    time = match.group(2)
+                break
+        
+        # 创建输出目录
+        current_dir = os.getcwd()
+        gt_dir = os.path.join(current_dir, "OUTcsv")
+        full_output_dir = os.path.join(gt_dir, self.output_folder)
+        os.makedirs(full_output_dir, exist_ok=True)
+        
+        # 生成CSV文件名
+        csv_filename = f"{radar_name}_{type_suffix}_{bag_name}.csv"
+        output_csv = os.path.join(full_output_dir, csv_filename)
+        
+        with open(output_csv, 'w', newline='', encoding='utf-8-sig') as csvfile:
+            # 根据数据类型选择字段
+            if data_type == 'targets':
+                fieldnames = [
+                    '序号', 'frame_id', 'timestamp', 'target_index',
+                    'obj_id', 'obj_type', 'dist_x', 'dist_y',
+                    'length', 'width', 'yaw_ang', 'dyn_flg',
+                    'life_cycle','objTypeProp', 'velAbsX(m/s)', 'velAbsY(m/s)',
+                    'accelAbsX(m/s)', 'accelAbsY(m/s)', 'TTC', 'existProb','obstProbability'
+                ]
+            elif data_type == 'egos':
+                fieldnames = [
+                    '序号', '帧ID', '帧时间戳',
+                    '车速(m/s)', '横摆角速度', '横向加速度', '纵向加速度',
+                    '横摆角方向', '档位', '左转灯', '右转灯',
+                    '左前门', '右前门', '左后门', '右后门',
+                    '车速有效', '横摆角有效', '横向加速度有效', '纵向加速度有效',
+                    '方向盘角度', '方向盘方向',
+                    '左前轮速(km/h)', '右前轮速(km/h)', '左后轮速(km/h)', '右后轮速(km/h)',
+                    '左前轮速有效', '右前轮速有效', '左后轮速有效', '右后轮速有效',
+                    '雨刮档位', '里程'
+                ]
+            elif data_type == 'dots':
+                fieldnames = [
+                    '序号', '帧ID', '帧时间戳', '点索引',
+                    '距离', '径向速度(m/s)', '方位角', '俯仰角',
+                    '功率(dB)', '信噪比', 'RCS', '索引位置',
+                    '方位角质量', '俯仰角质量', '速度解模糊质量', '方位角模糊标志'
+                ]
+            
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            
+            for i, item in enumerate(data_list, 1):
+                if data_type == 'targets':
+                    writer.writerow({
+                        '序号': i,
+                        'frame_id': item['frame_id'],
+                        'timestamp': f"{item['timestamp']:.6f}",
+                        'target_index': item['target_index'],
+                        'obj_id': item['obj_id'],
+                        'obj_type': item['obj_type'],
+                        'dist_x': f"{item['dist_x']:.2f}",
+                        'dist_y': f"{item['dist_y']:.2f}",
+                        'length': f"{item['length']:.2f}",
+                        'width': f"{item['width']:.2f}",
+                        'yaw_ang': f"{item['yaw_ang']:.2f}",
+                        'dyn_flg': item['dyn_flg'],
+                        'life_cycle': item['life_cycle'],
+                        'objTypeProp': item['objTypeProp'],
+                        'velAbsX(m/s)': f"{item['velAbsX']:.2f}",
+                        'velAbsY(m/s)': f"{item['velAbsY']:.2f}",
+                        'accelAbsX(m/s)': f"{item['accelAbsX']:.2f}",
+                        'accelAbsY(m/s)': f"{item['accelAbsY']:.2f}",
+                        'TTC': f"{item['f_ttc']:.2f}",
+                        'existProb': f"{item['existProb']:.2f}",
+                        'obstProbability': f"{item['obstProbability']:.2f}",
+                    })
+                elif data_type == 'egos':
+                    writer.writerow({
+                        '序号': i,
+                        '帧ID': item['frame_id'],
+                        '帧时间戳': f"{item['timestamp']:.6f}",
+                        '车速(m/s)': f"{item['actual_spd']:.2f}",
+                        '横摆角速度': f"{item['yaw_rate']:.2f}",
+                        '横向加速度': f"{item['lat_accel']:.2f}",
+                        '纵向加速度': f"{item['long_accel']:.2f}",
+                        '横摆角方向': item['yaw_rate_sign'],
+                        '档位': item['actual_gear'],
+                        '左转灯': item['turn_light_left'],
+                        '右转灯': item['turn_light_right'],
+                        '左前门': item['open_door_left_top'],
+                        '右前门': item['open_door_right_top'],
+                        '左后门': item['open_door_left_bottom'],
+                        '右后门': item['open_door_right_bottom'],
+                        '车速有效': item['actual_spd_valid'],
+                        '横摆角有效': item['yaw_rate_valid'],
+                        '横向加速度有效': item['lat_accel_valid'],
+                        '纵向加速度有效': item['long_accel_valid'],
+                        '方向盘角度': f"{item['steer_angle']:.2f}",
+                        '方向盘方向': item['steer_angle_sign'],
+                        '左前轮速(km/h)': f"{item['fl_whl_spd']:.2f}",
+                        '右前轮速(km/h)': f"{item['fr_whl_spd']:.2f}",
+                        '左后轮速(km/h)': f"{item['rl_whl_spd']:.2f}",
+                        '右后轮速(km/h)': f"{item['rr_whl_spd']:.2f}",
+                        '左前轮速有效': item['fl_whl_spd_valid'],
+                        '右前轮速有效': item['fr_whl_spd_valid'],
+                        '左后轮速有效': item['rl_whl_spd_valid'],
+                        '右后轮速有效': item['rr_whl_spd_valid'],
+                        '雨刮档位': item['wiper_gear'],
+                        '里程': item['mileage'],
+                    })
+                elif data_type == 'dots':
+                    writer.writerow({
+                        '序号': i,
+                        '帧ID': item['frame_id'],
+                        '帧时间戳': f"{item['timestamp']:.6f}",
+                        '点索引': item['dot_index'],
+                        '距离': f"{item['dist']:.2f}",
+                        '径向速度(m/s)': f"{item['vel']:.2f}",
+                        '方位角': f"{item['ang_azi']:.2f}",
+                        '俯仰角': f"{item['ang_ele']:.2f}",
+                        '功率(dB)': item['power'],
+                        '信噪比': item['snr'],
+                        'RCS': item['rcs'],
+                        '索引位置': item['idx_loc_peer'],
+                        '方位角质量': item['theta_qly'],
+                        '俯仰角质量': item['phi_qly'],
+                        '速度解模糊质量': item['dv_qly'],
+                        '方位角模糊标志': item['is_azi_amb_detected'],
+                    })
+        
+        return output_csv
 
 
 class BagAnalyzerGUI(QMainWindow):
@@ -410,8 +687,8 @@ class BagAnalyzerGUI(QMainWindow):
         self.init_ui()
         
     def init_ui(self):
-        self.setWindowTitle("雷达目标信息提取工具")
-        self.setGeometry(100, 100, 800, 600)
+        self.setWindowTitle("雷达数据提取工具")
+        self.setGeometry(100, 100, 800, 700)
         
         # 中心部件
         central_widget = QWidget()
@@ -445,11 +722,15 @@ class BagAnalyzerGUI(QMainWindow):
         control_layout.addRow("输出文件夹:", self.output_input)
         
         # 帧头校验
+        header_layout = QHBoxLayout()
         self.header_input = QSpinBox()
         self.header_input.setRange(0, 65535)
-        self.header_input.setValue(0x5AA5)  # 默认帧头
+        self.header_input.setValue(0x5AA5)
         self.header_input.setMinimumWidth(100)
-        control_layout.addRow("帧头校验(十六进制):", self.header_input)
+        self.header_input.setDisplayIntegerBase(16)
+        self.header_input.setPrefix("0x")
+        header_layout.addWidget(self.header_input)
+        control_layout.addRow("帧头校验(十六进制):", header_layout)
         
         # 文件计数
         self.file_count_label = QLabel("0 个文件")
@@ -458,7 +739,28 @@ class BagAnalyzerGUI(QMainWindow):
         control_group.setLayout(control_layout)
         main_layout.addWidget(control_group)
         
-        # 进度条
+        # ========== 提取选项 ==========
+        options_group = QGroupBox("提取数据类型 (可多选)")
+        options_layout = QHBoxLayout()
+        
+        self.targets_check = QCheckBox("目标物信息 (Targets)")
+        self.targets_check.setChecked(True)
+        
+        self.egos_check = QCheckBox("自车信息 (Ego Vehicle)")
+        self.egos_check.setChecked(False)
+        
+        self.dots_check = QCheckBox("点云信息 (Point Cloud)")
+        self.dots_check.setChecked(False)
+        
+        options_layout.addWidget(self.targets_check)
+        options_layout.addWidget(self.egos_check)
+        options_layout.addWidget(self.dots_check)
+        
+
+        options_group.setLayout(options_layout)
+        main_layout.addWidget(options_group)
+        
+        # ========== 进度条 ==========
         self.progress_bar = QProgressBar()
         self.progress_bar.setTextVisible(True)
         main_layout.addWidget(self.progress_bar)
@@ -469,6 +771,8 @@ class BagAnalyzerGUI(QMainWindow):
         self.start_btn = QPushButton("开始提取")
         self.start_btn.clicked.connect(self.start_analysis)
         self.start_btn.setEnabled(False)
+        self.start_btn.setMinimumHeight(40)
+        self.start_btn.setStyleSheet("font-weight: bold;")
         
         button_layout.addWidget(self.start_btn)
         button_layout.addStretch()
@@ -507,7 +811,18 @@ class BagAnalyzerGUI(QMainWindow):
         
     def start_analysis(self):
         """开始提取"""
-        # 获取所有参数
+        # 检查至少选择了一种数据类型
+        extract_options = {
+            'targets': self.targets_check.isChecked(),
+            'egos': self.egos_check.isChecked(),
+            'dots': self.dots_check.isChecked()
+        }
+        
+        if not any(extract_options.values()):
+            QMessageBox.warning(self, "警告", "请至少选择一种要提取的数据类型！")
+            return
+        
+        # 获取参数
         vehicle_id = self.vehicle_input.text().strip()
         custom_field = self.custom_input.text().strip()
         output_folder = self.output_input.text().strip()
@@ -516,31 +831,41 @@ class BagAnalyzerGUI(QMainWindow):
         self.start_btn.setEnabled(False)
         self.progress_bar.setValue(0)
         
-        # 计算总任务数：每个bag文件 × 4个雷达
-        total_tasks = len(self.bag_files) * 4 + 4  # 额外4个任务用于生成CSV
-        self.progress_bar.setMaximum(total_tasks)
-        
         self.info_text.clear()
-        self.info_text.append(f"开始提取目标信息...")
-        self.info_text.append("-" * 50)
+        self.info_text.append("=" * 60)
+        self.info_text.append("开始提取数据...")
+        self.info_text.append("-" * 60)
         
-        # 创建并启动分析线程
-        self.analyzer_thread = BagAnalyzerThread(
+        # 显示选择的提取类型
+        selected = []
+        if extract_options['targets']: selected.append("目标物")
+        if extract_options['egos']: selected.append("自车信息")
+        if extract_options['dots']: selected.append("点云")
+        self.info_text.append(f"提取类型: {', '.join(selected)}")
+        self.info_text.append("-" * 60)
+        
+        # 创建分析对象
+        self.analyzer = BagAnalyzer(
             self.bag_files,
             self.header_input.value(),
             vehicle_id,
             custom_field,
-            output_folder
+            output_folder,
+            extract_options
         )
         
-        self.analyzer_thread.progress_update.connect(self.update_progress)
-        self.analyzer_thread.analysis_done.connect(self.analysis_completed)
-        self.analyzer_thread.error_occurred.connect(self.analysis_error)
+        # 设置回调函数
+        self.analyzer.set_callbacks(
+            self.update_progress,
+            self.analysis_completed,
+            self.analysis_error
+        )
         
-        self.analyzer_thread.start()
+        self.analyzer.run()
         
     def update_progress(self, current, total, filename, status):
         """更新进度"""
+        self.progress_bar.setMaximum(total)
         self.progress_bar.setValue(current)
         
     def analysis_completed(self, results, csv_files):
@@ -559,7 +884,7 @@ class BagAnalyzerGUI(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")    # 设置应用样式
+    app.setStyle("Breeze")    # 设置应用样式
     
     window = BagAnalyzerGUI()
     window.show()

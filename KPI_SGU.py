@@ -23,10 +23,10 @@ class TimeStampMatcher:
         
         # 定义4个雷达话题
         self.radar_topics = [
-            ("/wf/corner_radar/lgu_data_1", "WFRAFL"),   # 前左雷达
-            ("/wf/corner_radar/lgu_data_2", "WFRAFR"),   # 前右雷达
-            ("/wf/corner_radar/lgu_data_3", "WFRARL"),   # 后左雷达
-            ("/wf/corner_radar/lgu_data_4", "WFRARR"),   # 后右雷达
+            ("/wf/corner_radar/lgu_data_1", "FL"),   # 前左雷达
+            ("/wf/corner_radar/lgu_data_2", "FR"),   # 前右雷达
+            ("/wf/corner_radar/lgu_data_3", "RL"),   # 后左雷达
+            ("/wf/corner_radar/lgu_data_4", "RR"),   # 后右雷达
         ]
         
         # IMU话题
@@ -87,8 +87,7 @@ class TimeStampMatcher:
         current_dir = os.getcwd()
         base_name = os.path.splitext(bag_name)[0]
         
-        # 直接放在MATCHED_Results下面
-        main_output_dir = os.path.join(current_dir, "MATCHED_Results")
+        main_output_dir = os.path.join(current_dir, "Matched_Results")
         os.makedirs(main_output_dir, exist_ok=True)
         bag_output_dir = os.path.join(main_output_dir, base_name)
         
@@ -121,6 +120,7 @@ class TimeStampMatcher:
 
                     'Target1AcceX': 'AcceX_GT',             # 纵向加速度
                     'Target1AcceY': 'AcceY_GT',             # 横向加速度
+                    
                     'Target1HeadingDiff': 'YawAng_GT',      # 航向角差
                 }
                 
@@ -131,10 +131,13 @@ class TimeStampMatcher:
                     # 特殊处理速度单位转换
                     if msg_field in ['Target1LngSpeedKPH']:
                         if value is not None:
-                            try:
-                                value = float(value) / 3.6  # km/h -> m/s
-                            except (ValueError, TypeError):
-                                value = 0.0
+                            value = float(value) / 3.6  # km/h -> m/s
+
+
+                    if msg_field in ['Target1HeadingDiff']:
+                        if value is not None:
+                            value = float(value)  * (3.1416 / 180.0)  #deg->rad
+
                     
                     imu_record[csv_field] = float(value) if value is not None else 0.0
                 

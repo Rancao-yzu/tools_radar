@@ -19,7 +19,6 @@ class TimeStampMatcher:
     def __init__(self, bag_files,  log_queue):
         self.bag_files = bag_files
         self.log_queue = log_queue
-        self._stop_flag = False
         
         # 定义4个雷达话题
         self.radar_topics = [
@@ -46,9 +45,6 @@ class TimeStampMatcher:
             self.log(f"开始处理 {total_files} 个bag文件")
             
             for i, bag_file in enumerate(self.bag_files, 1):
-                if self._stop_flag:
-                    self.log("处理被停止")
-                    return
                     
                 bag_name = os.path.basename(bag_file)
                 self.log(f"[{i}/{total_files}] 处理: {bag_name}")
@@ -57,15 +53,11 @@ class TimeStampMatcher:
                 
                 self.extract_imu_data(bag_file, bag_name)
                 
-                if self._stop_flag:
-                    return
                 
                 bag_output_dir = self.create_bag_output_dir(bag_name)
                 
                 output_files = []
                 for topic, radar_name in self.radar_topics:
-                    if self._stop_flag:
-                        return
                     
                     self.log(f" 处理雷达: {radar_name}")
                     csv_file = self.process_radar_topic(bag_file, bag_name, topic, radar_name, bag_output_dir)
@@ -102,8 +94,6 @@ class TimeStampMatcher:
             imu_count = 0
             
             for topic, msg, t in bag.read_messages(topics=[self.imu_topic]):
-                if self._stop_flag:
-                    break
                     
                 imu_record = {
                     'bag_file': bag_name,
@@ -189,20 +179,19 @@ class TimeStampMatcher:
             
             # 处理该雷达的所有消息
             for msg_topic, msg, t in bag.read_messages(topics=[topic]):
-                if self._stop_flag:
-                    break
+
+                if hasattr(msg, 'header'):
+                    header = msg.header  #实际录制时候的时间戳
                 
                 # 直接使用msg.ObjectsBuffer
                 if not hasattr(msg, 'ObjectsBuffer'):
                     continue
                         
                 frame_count += 1
-                timestamp = t.to_sec()
+                timestamp = t.to_sec() #回灌后的时间戳
                 
                 # 遍历目标列表
                 for obj_idx, obj in enumerate(msg.ObjectsBuffer):
-                    if self._stop_flag:
-                        break
                     
                     # 提取目标信息
                     target_info = {
@@ -266,8 +255,6 @@ class TimeStampMatcher:
         skipped_count = 0
         
         for target in radar_targets:
-            if self._stop_flag:
-                break
                 
             # 找到最近的时间戳
             idx = np.argmin(np.abs(imu_timestamps - target['timestamp']))

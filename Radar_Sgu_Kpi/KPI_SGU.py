@@ -408,7 +408,8 @@ class TimeStampMatcher:
             return None
         
         # 生成CSV文件名
-        csv_filename = f"{bag_name}_{radar_name}.csv"
+        bag_name_csv = bag_name.replace('.bag', '')
+        csv_filename = f"{bag_name_csv}_{radar_name}.csv"
         csv_path = os.path.join(output_dir, csv_filename)
         
         # 字段顺序

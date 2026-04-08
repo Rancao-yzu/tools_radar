@@ -428,7 +428,7 @@ def evaluate_one_function(gt_samps: List[Tuple[float, int, int]],
                 c.ED += 1  # 早退：GT结束晚于WF，且时间差超过容差
 
             # 存在正报和误报场景（按PPT的"WF与多个GT交叠"解释）
-            c.TP += len(ovl_gt)  # 每个重叠的GT事件都算一个正报
+            # c.TP += len(ovl_gt)  # 每个重叠的GT事件都算一个正报
             c.FP += (len(ovl_gt) - 1)  # 多余的WF事件算误报
 
     # B) 针对每个GT事件（真值报警）的规则

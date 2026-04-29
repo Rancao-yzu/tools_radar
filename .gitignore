@@ -1,6 +1,7 @@
 build
 devel
 OUT
+OUTKPI
 *.ver
 *.pyc
 **/.vscode

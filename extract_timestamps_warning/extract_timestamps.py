@@ -497,7 +497,7 @@ class MainWindow(QMainWindow):
             
         # 生成带日期的输出文件名
         output_filename = f"timestamps_{date_str}.csv"
-        output_path = os.path.join("OUT", output_filename)
+        output_path = os.path.join("OUTADAS", output_filename)
         
         try:
             # CSV表头

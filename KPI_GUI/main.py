@@ -11,8 +11,6 @@ import os
 import sys
 import threading
 
-# 导入评估函数
-from eval_warning_metrics_cn import evaluate_radar_metrics
 
 class RadarEvalGUI:
     def __init__(self, root):

@@ -5,4 +5,5 @@ OUTKPI
 OUTADAS
 *.ver
 *.pyc
+*.csv
 **/.vscode

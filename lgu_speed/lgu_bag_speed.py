@@ -7,14 +7,15 @@
 1. 自动扫描指定文件夹中的所有ROS bag文件
 2. 解析指定的ROS话题消息，从二进制数据中提取车速信息
 3. 统计车速在10-20 km/h范围内的帧数及占比
-4. 生成详细的分析报告并导出为CSV格式
+4. 统计总时长和符合标准车速的时长
+5. 生成详细的分析报告并导出为CSV格式
 """
 import rosbag
 import struct
 import csv
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QPushButton, QLabel, QLineEdit, 
                            QTextEdit, QFileDialog, QMessageBox, QProgressBar,
@@ -60,6 +61,8 @@ class BagAnalyzerThread(QThread):
         speeds_kmh = []
         valid_frames = 0
         total_frames = 0
+        start_time = None
+        end_time = None
         
         try:
             bag = rosbag.Bag(bag_file, 'r')
@@ -75,6 +78,13 @@ class BagAnalyzerThread(QThread):
                     speed_mps = struct.unpack_from('<f', raw_bytes, self.env_offset)[0]
                     speed_kmh = speed_mps * 3.6
                     speeds_kmh.append(speed_kmh)
+                    
+                    # 记录起止时间
+                    timestamp = t.to_sec()
+                    if start_time is None:
+                        start_time = timestamp
+                    end_time = timestamp
+                    
                     valid_frames += 1
                 except:
                     continue
@@ -96,6 +106,12 @@ class BagAnalyzerThread(QThread):
                 else:
                     range_percentage = 0
                 
+                # 计算总时长（秒）
+                total_duration = end_time - start_time if start_time and end_time else 0
+                
+                # 符合标准时长 = 总时长 × 占比
+                in_range_duration = total_duration * (range_percentage / 100) if total_duration > 0 else 0
+                
                 return {
                     'bag_name': os.path.basename(bag_file),
                     'bag_path': bag_file,
@@ -105,7 +121,11 @@ class BagAnalyzerThread(QThread):
                     'percentage': round(range_percentage, 2),
                     'min_speed': round(speed_min, 1),
                     'max_speed': round(speed_max, 1),
-                    'avg_speed': round(speed_avg, 1)
+                    'avg_speed': round(speed_avg, 1),
+                    'total_duration': total_duration,
+                    'in_range_duration': in_range_duration,
+                    'total_duration_str': self.format_duration(total_duration),
+                    'in_range_duration_str': self.format_duration(in_range_duration)
                 }
             else:
                 return {
@@ -117,9 +137,13 @@ class BagAnalyzerThread(QThread):
                     'percentage': 0.0,
                     'min_speed': 0.0,
                     'max_speed': 0.0,
-                    'avg_speed': 0.0
+                    'avg_speed': 0.0,
+                    'total_duration': 0.0,
+                    'in_range_duration': 0.0,
+                    'total_duration_str': '00:00:00',
+                    'in_range_duration_str': '00:00:00'
                 }
-                
+                    
         except Exception as e:
             return {
                 'bag_name': os.path.basename(bag_file),
@@ -131,9 +155,20 @@ class BagAnalyzerThread(QThread):
                 'min_speed': 0.0,
                 'max_speed': 0.0,
                 'avg_speed': 0.0,
+                'total_duration': 0.0,
+                'in_range_duration': 0.0,
+                'total_duration_str': '00:00:00',
+                'in_range_duration_str': '00:00:00',
                 'error': str(e)
             }
 
+    def format_duration(self, seconds):
+        """将秒数格式化为 HH:MM:SS 格式"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    
     def save_to_csv(self, results, output_csv):
         """保存结果到CSV"""
         if not results:
@@ -150,6 +185,8 @@ class BagAnalyzerThread(QThread):
                 '最小车速(km/h)',
                 '最大车速(km/h)',
                 '平均车速(km/h)',
+                '总时长',
+                '10-20 km/h时长',
                 '文件路径'
             ]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -157,6 +194,8 @@ class BagAnalyzerThread(QThread):
             
             total_valid = 0
             total_count_10_20 = 0
+            total_duration = 0.0
+            total_in_range_duration = 0.0
             
             for i, result in enumerate(results, 1):
                 writer.writerow({
@@ -169,11 +208,15 @@ class BagAnalyzerThread(QThread):
                     '最小车速(km/h)': f"{result['min_speed']:.1f}",
                     '最大车速(km/h)': f"{result['max_speed']:.1f}",
                     '平均车速(km/h)': f"{result['avg_speed']:.1f}",
+                    '总时长': result['total_duration_str'],
+                    '10-20 km/h时长': result['in_range_duration_str'],
                     '文件路径': result['bag_path']
                 })
                 
                 total_valid += result['valid_frames']
                 total_count_10_20 += result['count_10_20']
+                total_duration += result['total_duration']
+                total_in_range_duration += result['in_range_duration']
             
             # 添加汇总行
             total_percentage = (total_count_10_20 / total_valid * 100) if total_valid > 0 else 0
@@ -189,6 +232,8 @@ class BagAnalyzerThread(QThread):
                 '最小车速(km/h)': '',
                 '最大车速(km/h)': '',
                 '平均车速(km/h)': '',
+                '总时长': self.format_duration(total_duration),
+                '10-20 km/h时长': self.format_duration(total_in_range_duration),
                 '文件路径': ''
             })
 
@@ -272,9 +317,10 @@ class BagAnalyzerGUI(QMainWindow):
         
         # 结果表格
         self.table_widget = QTableWidget()
-        self.table_widget.setColumnCount(6)
+        self.table_widget.setColumnCount(8)  # 增加时长列
         self.table_widget.setHorizontalHeaderLabels([
-            "序号", "文件名", "有效帧数", "10-20帧数", "占比(%)", "平均车速(km/h)"
+            "序号", "文件名", "有效帧数", "10-20帧数", "占比(%)", 
+            "平均车速(km/h)", "总时长", "10-20时长"
         ])
         self.table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         splitter.addWidget(self.table_widget)
@@ -287,15 +333,19 @@ class BagAnalyzerGUI(QMainWindow):
         self.total_valid_label = QLabel("0")
         self.total_range_label = QLabel("0")
         self.total_percent_label = QLabel("0.00%")
+        self.total_duration_label = QLabel("00:00:00")
+        self.in_range_duration_label = QLabel("00:00:00")
         
         summary_layout.addRow("总文件数:", self.total_files_label)
         summary_layout.addRow("总有效帧数:", self.total_valid_label)
         summary_layout.addRow("总10-20 km/h帧数:", self.total_range_label)
         summary_layout.addRow("总占比:", self.total_percent_label)
+        summary_layout.addRow("总时长:", self.total_duration_label)
+        summary_layout.addRow("10-20 km/h时长:", self.in_range_duration_label)
         
         summary_group.setLayout(summary_layout)
         splitter.addWidget(summary_group)
-        splitter.setSizes([500, 150])
+        splitter.setSizes([400, 250])
         
         main_layout.addWidget(splitter)
         
@@ -367,6 +417,8 @@ class BagAnalyzerGUI(QMainWindow):
         self.table_widget.setItem(row, 3, QTableWidgetItem(str(result['count_10_20'])))
         self.table_widget.setItem(row, 4, QTableWidgetItem(f"{result['percentage']:.2f}%"))
         self.table_widget.setItem(row, 5, QTableWidgetItem(f"{result['avg_speed']:.1f}"))
+        self.table_widget.setItem(row, 6, QTableWidgetItem(result.get('total_duration_str', '00:00:00')))
+        self.table_widget.setItem(row, 7, QTableWidgetItem(result.get('in_range_duration_str', '00:00:00')))
         
     def analysis_completed(self, results, csv_path):
         """分析完成"""
@@ -380,11 +432,15 @@ class BagAnalyzerGUI(QMainWindow):
             total_valid = sum(r['valid_frames'] for r in results)
             total_count_10_20 = sum(r['count_10_20'] for r in results)
             total_percentage = (total_count_10_20 / total_valid * 100) if total_valid > 0 else 0
+            total_duration = sum(r.get('total_duration', 0.0) for r in results)
+            in_range_duration = sum(r.get('in_range_duration', 0.0) for r in results)
             
             self.total_files_label.setText(str(len(results)))
             self.total_valid_label.setText(str(total_valid))
             self.total_range_label.setText(str(total_count_10_20))
             self.total_percent_label.setText(f"{total_percentage:.2f}%")
+            self.total_duration_label.setText(BagAnalyzerThread.format_duration(None, total_duration))
+            self.in_range_duration_label.setText(BagAnalyzerThread.format_duration(None, in_range_duration))
         
         QMessageBox.information(self, "完成", f"分析完成！\nCSV文件已保存到: {csv_path}")
         

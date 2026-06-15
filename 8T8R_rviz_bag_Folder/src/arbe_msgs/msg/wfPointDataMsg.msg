@@ -1,0 +1,32 @@
+std_msgs/Header header
+float32 dis 
+float32 spd  
+float32 angle
+float32 ang_ele
+float32 d_var
+float32 v_var
+float32 dv_cov
+float32 theta_var
+float32 phi_var
+
+int8 pow_db
+int8 snr
+int8 rcs
+int8 noise
+
+int8 cluster_id
+uint8 ghost_rcd
+uint8 nci_type
+uint8 n_ang
+uint8 theta_qly
+uint8 phi_qly
+uint8 dv_qly
+uint8 is_azi_amb_detected
+uint8 is_ele_amb_detected
+uint8 conf
+uint8 meas_status
+uint8 mov_flg
+uint16 object_id
+uint16 curb_id
+uint16 idxo
+uint16 idx_loc_peer

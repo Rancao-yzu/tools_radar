@@ -1,0 +1,6 @@
+<launch>
+
+    <!-- 启动 RViz 并指定配置文件路径 -->
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find my_rviz_plugin)/config/config.rviz" output="screen" />
+
+</launch>

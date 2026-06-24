@@ -6,7 +6,7 @@
 namespace my_rviz_plugin
 {
 
-BagReader::BagReader() : current_frame_(0), play_rate_(1.0), playing_(false), finishProcessFlag_(true), bPlayFloatData_(false), bPlaySPData_(true), mainRadarIndex_(0)  
+BagReader::BagReader() : current_frame_(0), play_rate_(1.0), playing_(false), finishProcessFlag_(true), is_sp_or_not_(true), mainRadarIndex_(0)  
 {   }
 
 BagReader::~BagReader()// 析构函数，确保播放线程安全退出，并关闭bag文件
@@ -162,30 +162,26 @@ void BagReader::readBagFile// 读取bag文件，并按话题分类存储消息�
 int BagReader::getMainRadarPclSize()// 获取主雷达点云数量
 {
   int result = 0;
-  // 优先用 float_data 做帧率基准, float 未勾选时用 SP
-  bool useFloat = bPlayFloatData_ || !bPlaySPData_;
+  // is_sp_or_not_=true用SP帧数，false用float帧数
+  bool useSP = is_sp_or_not_;
 
   switch (mainRadarIndex_)
   {
   case 0:
-    result = useFloat ? pointcloud_msgs0_.size() : pointcloud_sp_msgs0_.size();
+    result = useSP ? pointcloud_sp_msgs0_.size() : pointcloud_msgs0_.size();
     break;
-
   case 1:
-    result = useFloat ? pointcloud_msgs1_.size() : pointcloud_sp_msgs1_.size();
+    result = useSP ? pointcloud_sp_msgs1_.size() : pointcloud_msgs1_.size();
     break;
-
   case 2:
-    result = useFloat ? pointcloud_msgs2_.size() : pointcloud_sp_msgs2_.size();
+    result = useSP ? pointcloud_sp_msgs2_.size() : pointcloud_msgs2_.size();
     break;
-
   case 3:
-    result = useFloat ? pointcloud_msgs3_.size() : pointcloud_sp_msgs3_.size();
+    result = useSP ? pointcloud_sp_msgs3_.size() : pointcloud_msgs3_.size();
     break;
-
   case 4:
   default:
-    result = useFloat ? pointcloud_msgs4_.size() : pointcloud_sp_msgs4_.size();
+    result = useSP ? pointcloud_sp_msgs4_.size() : pointcloud_msgs4_.size();
     break;
   }
 
@@ -195,29 +191,25 @@ int BagReader::getMainRadarPclSize()// 获取主雷达点云数量
 ros::Time BagReader::getMainRadarTime(int curIdx)
 {
   ros::Time result;
-  bool useFloat = bPlayFloatData_ || !bPlaySPData_;
+  bool useSP = is_sp_or_not_;
 
   switch (mainRadarIndex_)
   {
   case 0:
-    result = useFloat ? pointcloud_msgs0_[curIdx].getTime() : pointcloud_sp_msgs0_[curIdx].getTime();
+    result = useSP ? pointcloud_sp_msgs0_[curIdx].getTime() : pointcloud_msgs0_[curIdx].getTime();
     break;
-
   case 1:
-    result = useFloat ? pointcloud_msgs1_[curIdx].getTime() : pointcloud_sp_msgs1_[curIdx].getTime();
+    result = useSP ? pointcloud_sp_msgs1_[curIdx].getTime() : pointcloud_msgs1_[curIdx].getTime();
     break;
-
   case 2:
-    result = useFloat ? pointcloud_msgs2_[curIdx].getTime() : pointcloud_sp_msgs2_[curIdx].getTime();
+    result = useSP ? pointcloud_sp_msgs2_[curIdx].getTime() : pointcloud_msgs2_[curIdx].getTime();
     break;
-
   case 3:
-    result = useFloat ? pointcloud_msgs3_[curIdx].getTime() : pointcloud_sp_msgs3_[curIdx].getTime();
+    result = useSP ? pointcloud_sp_msgs3_[curIdx].getTime() : pointcloud_msgs3_[curIdx].getTime();
     break;
-
   case 4:
   default:
-    result = useFloat ? pointcloud_msgs4_[curIdx].getTime() : pointcloud_sp_msgs4_[curIdx].getTime();
+    result = useSP ? pointcloud_sp_msgs4_[curIdx].getTime() : pointcloud_msgs4_[curIdx].getTime();
     break;
   }
 
@@ -226,11 +218,11 @@ ros::Time BagReader::getMainRadarTime(int curIdx)
 
 void BagReader::packetCallbackMsg()
 {
-  // frame_msgs_ 布局: [0-4]float_data [5-9]SP_data [10-15]camera [16]car [17-21]cube_data
+  // frame_msgs_ 布局: [0-4]float_data或SP_data [5-10]camera [11]car [12-16]cube_data
   frame_msgs_.clear();
   for(int i=0;i<MAX_TOPIC_NUM;i++)
   {
-    if(msg_flags_[i]<0)//当某个话题没有对应时间戳的消息时，用作提供默认消息
+    if(msg_flags_[i]<0)
     {
       frame_msgs_.push_back(empty_msgs_[0]);
     }
@@ -238,78 +230,61 @@ void BagReader::packetCallbackMsg()
     {
       switch (i)
       {
-        // float_data 0~4
+        // float_data或SP_data 0~4（共享槽位，根据 is_sp_or_not_ 选择）
         case 0:
-          frame_msgs_.push_back(pointcloud_msgs0_[msg_flags_[i]]);
+          frame_msgs_.push_back(is_sp_or_not_ ? pointcloud_sp_msgs0_[msg_flags_[i]] : pointcloud_msgs0_[msg_flags_[i]]);
           break;
         case 1:
-          frame_msgs_.push_back(pointcloud_msgs1_[msg_flags_[i]]);
+          frame_msgs_.push_back(is_sp_or_not_ ? pointcloud_sp_msgs1_[msg_flags_[i]] : pointcloud_msgs1_[msg_flags_[i]]);
           break;
         case 2:
-          frame_msgs_.push_back(pointcloud_msgs2_[msg_flags_[i]]);
+          frame_msgs_.push_back(is_sp_or_not_ ? pointcloud_sp_msgs2_[msg_flags_[i]] : pointcloud_msgs2_[msg_flags_[i]]);
           break;
         case 3:
-          frame_msgs_.push_back(pointcloud_msgs3_[msg_flags_[i]]);
+          frame_msgs_.push_back(is_sp_or_not_ ? pointcloud_sp_msgs3_[msg_flags_[i]] : pointcloud_msgs3_[msg_flags_[i]]);
           break;
         case 4:
-          frame_msgs_.push_back(pointcloud_msgs4_[msg_flags_[i]]);
-          break;
-
-        // SP_data 0~4
-        case 5:
-          frame_msgs_.push_back(pointcloud_sp_msgs0_[msg_flags_[i]]);
-          break;
-        case 6:
-          frame_msgs_.push_back(pointcloud_sp_msgs1_[msg_flags_[i]]);
-          break;
-        case 7:
-          frame_msgs_.push_back(pointcloud_sp_msgs2_[msg_flags_[i]]);
-          break;
-        case 8:
-          frame_msgs_.push_back(pointcloud_sp_msgs3_[msg_flags_[i]]);
-          break;
-        case 9:
-          frame_msgs_.push_back(pointcloud_sp_msgs4_[msg_flags_[i]]);
+          frame_msgs_.push_back(is_sp_or_not_ ? pointcloud_sp_msgs4_[msg_flags_[i]] : pointcloud_msgs4_[msg_flags_[i]]);
           break;
 
         // camera 0~5
-        case 10:
+        case 5:
           frame_msgs_.push_back(camera_msgs0_[msg_flags_[i]]);
           break;
-        case 11:
+        case 6:
           frame_msgs_.push_back(camera_msgs1_[msg_flags_[i]]);
           break;
-        case 12:
+        case 7:
           frame_msgs_.push_back(camera_msgs2_[msg_flags_[i]]);
           break;
-        case 13:
+        case 8:
           frame_msgs_.push_back(camera_msgs3_[msg_flags_[i]]);
           break;
-        case 14:
+        case 9:
           frame_msgs_.push_back(camera_msgs4_[msg_flags_[i]]);
           break;
-        case 15:
+        case 10:
           frame_msgs_.push_back(camera_msgs5_[msg_flags_[i]]);
           break;
 
-        case 16:
+        case 11:
           frame_msgs_.push_back(car_msgs_[msg_flags_[i]]);
           break;
 
         // cube_data 0~4
-        case 17:
+        case 12:
           frame_msgs_.push_back(cube_data_msgs0_[msg_flags_[i]]);
           break;
-        case 18:
+        case 13:
           frame_msgs_.push_back(cube_data_msgs1_[msg_flags_[i]]);
           break;
-        case 19:
+        case 14:
           frame_msgs_.push_back(cube_data_msgs2_[msg_flags_[i]]);
           break;
-        case 20:
+        case 15:
           frame_msgs_.push_back(cube_data_msgs3_[msg_flags_[i]]);
           break;
-        case 21:
+        case 16:
           frame_msgs_.push_back(cube_data_msgs4_[msg_flags_[i]]);
           break;
           
@@ -331,36 +306,40 @@ void BagReader::jumpToFrame(int frame_number)// 跳转到指定帧，并查找�
     {
       ros::Time selected_time = getMainRadarTime(current_frame_);
 
-      // float_data 0~4
-      msg_flags_[0] = find_Closest_Frame(selected_time,pointcloud_msgs0_);
-      msg_flags_[1] = find_Closest_Frame(selected_time,pointcloud_msgs1_);
-      msg_flags_[2] = find_Closest_Frame(selected_time,pointcloud_msgs2_);
-      msg_flags_[3] = find_Closest_Frame(selected_time,pointcloud_msgs3_);
-      msg_flags_[4] = find_Closest_Frame(selected_time,pointcloud_msgs4_);
-
-      // SP_data 0~4
-      msg_flags_[5] = find_Closest_Frame(selected_time,pointcloud_sp_msgs0_);
-      msg_flags_[6] = find_Closest_Frame(selected_time,pointcloud_sp_msgs1_);
-      msg_flags_[7] = find_Closest_Frame(selected_time,pointcloud_sp_msgs2_);
-      msg_flags_[8] = find_Closest_Frame(selected_time,pointcloud_sp_msgs3_);
-      msg_flags_[9] = find_Closest_Frame(selected_time,pointcloud_sp_msgs4_);
+      // float_data或SP_data 0~4（共享槽位）
+      if(is_sp_or_not_)
+      {
+        msg_flags_[0] = find_Closest_Frame(selected_time, pointcloud_sp_msgs0_);
+        msg_flags_[1] = find_Closest_Frame(selected_time, pointcloud_sp_msgs1_);
+        msg_flags_[2] = find_Closest_Frame(selected_time, pointcloud_sp_msgs2_);
+        msg_flags_[3] = find_Closest_Frame(selected_time, pointcloud_sp_msgs3_);
+        msg_flags_[4] = find_Closest_Frame(selected_time, pointcloud_sp_msgs4_);
+      }
+      else
+      {
+        msg_flags_[0] = find_Closest_Frame(selected_time, pointcloud_msgs0_);
+        msg_flags_[1] = find_Closest_Frame(selected_time, pointcloud_msgs1_);
+        msg_flags_[2] = find_Closest_Frame(selected_time, pointcloud_msgs2_);
+        msg_flags_[3] = find_Closest_Frame(selected_time, pointcloud_msgs3_);
+        msg_flags_[4] = find_Closest_Frame(selected_time, pointcloud_msgs4_);
+      }
 
       // camera 0~5
-      msg_flags_[10] = find_Closest_Frame(selected_time,camera_msgs0_);
-      msg_flags_[11] = find_Closest_Frame(selected_time,camera_msgs1_);
-      msg_flags_[12] = find_Closest_Frame(selected_time,camera_msgs2_);
-      msg_flags_[13] = find_Closest_Frame(selected_time,camera_msgs3_);
-      msg_flags_[14] = find_Closest_Frame(selected_time,camera_msgs4_);
-      msg_flags_[15] = find_Closest_Frame(selected_time,camera_msgs5_);
+      msg_flags_[5]  = find_Closest_Frame(selected_time, camera_msgs0_);
+      msg_flags_[6]  = find_Closest_Frame(selected_time, camera_msgs1_);
+      msg_flags_[7]  = find_Closest_Frame(selected_time, camera_msgs2_);
+      msg_flags_[8]  = find_Closest_Frame(selected_time, camera_msgs3_);
+      msg_flags_[9]  = find_Closest_Frame(selected_time, camera_msgs4_);
+      msg_flags_[10] = find_Closest_Frame(selected_time, camera_msgs5_);
 
-      msg_flags_[16]= find_Closest_Frame(selected_time,car_msgs_);
+      msg_flags_[11] = find_Closest_Frame(selected_time, car_msgs_);
 
       // cube_data 0~4
-      msg_flags_[17]= find_Closest_Frame(selected_time,cube_data_msgs0_);
-      msg_flags_[18]= find_Closest_Frame(selected_time,cube_data_msgs1_);
-      msg_flags_[19]= find_Closest_Frame(selected_time,cube_data_msgs2_);
-      msg_flags_[20]= find_Closest_Frame(selected_time,cube_data_msgs3_);
-      msg_flags_[21]= find_Closest_Frame(selected_time,cube_data_msgs4_);
+      msg_flags_[12] = find_Closest_Frame(selected_time, cube_data_msgs0_);
+      msg_flags_[13] = find_Closest_Frame(selected_time, cube_data_msgs1_);
+      msg_flags_[14] = find_Closest_Frame(selected_time, cube_data_msgs2_);
+      msg_flags_[15] = find_Closest_Frame(selected_time, cube_data_msgs3_);
+      msg_flags_[16] = find_Closest_Frame(selected_time, cube_data_msgs4_);
 
       packetCallbackMsg();// 获取当前帧消息
       message_callback_(frame_msgs_,current_frame_,msg_flags_);
@@ -425,14 +404,9 @@ int BagReader::find_Closest_Frame(const ros::Time& selected_time, std::vector<ro
     return closest_index;
 }
 
-void BagReader::setFloatDataFlag(bool flag)
+void BagReader::setSPFlag(bool flag)
 {
-  bPlayFloatData_ = flag;
-}
-
-void BagReader::setSPDataFlag(bool flag)
-{
-  bPlaySPData_ = flag;
+  is_sp_or_not_ = flag;
 }
 
 void BagReader::playLoop() 
@@ -440,8 +414,9 @@ void BagReader::playLoop()
   int mainRadarSize = getMainRadarPclSize();
   if (current_frame_ != 0)  current_frame_++; //2025/9/17
 
-  ROS_INFO("=========== playLoop  ==========");
 
+  ROS_INFO("=========== playLoop  ==========");
+  ROS_INFO("play_maxindex: %d", mainRadarSize);
   for (size_t i = current_frame_; i < mainRadarSize; ++i) 
   {
     while(!finishProcessFlag_)
@@ -457,32 +432,38 @@ void BagReader::playLoop()
     ros::Time selected_time = getMainRadarTime(current_frame_);
     ROS_INFO("Set current_frame_ to %d, Selected time: %f", current_frame_,selected_time.toSec());
 
-    msg_flags_[0] = find_Closest_Frame(selected_time,pointcloud_msgs0_);
-    msg_flags_[1] = find_Closest_Frame(selected_time,pointcloud_msgs1_);
-    msg_flags_[2] = find_Closest_Frame(selected_time,pointcloud_msgs2_);
-    msg_flags_[3] = find_Closest_Frame(selected_time,pointcloud_msgs3_);
-    msg_flags_[4] = find_Closest_Frame(selected_time,pointcloud_msgs4_);
+    // float_data或SP_data 0~4（共享槽位）
+    if(is_sp_or_not_)
+    {
+      msg_flags_[0] = find_Closest_Frame(selected_time, pointcloud_sp_msgs0_);
+      msg_flags_[1] = find_Closest_Frame(selected_time, pointcloud_sp_msgs1_);
+      msg_flags_[2] = find_Closest_Frame(selected_time, pointcloud_sp_msgs2_);
+      msg_flags_[3] = find_Closest_Frame(selected_time, pointcloud_sp_msgs3_);
+      msg_flags_[4] = find_Closest_Frame(selected_time, pointcloud_sp_msgs4_);
+    }
+    else
+    {
+      msg_flags_[0] = find_Closest_Frame(selected_time, pointcloud_msgs0_);
+      msg_flags_[1] = find_Closest_Frame(selected_time, pointcloud_msgs1_);
+      msg_flags_[2] = find_Closest_Frame(selected_time, pointcloud_msgs2_);
+      msg_flags_[3] = find_Closest_Frame(selected_time, pointcloud_msgs3_);
+      msg_flags_[4] = find_Closest_Frame(selected_time, pointcloud_msgs4_);
+    }
 
-    msg_flags_[5] = find_Closest_Frame(selected_time,pointcloud_sp_msgs0_);
-    msg_flags_[6] = find_Closest_Frame(selected_time,pointcloud_sp_msgs1_);
-    msg_flags_[7] = find_Closest_Frame(selected_time,pointcloud_sp_msgs2_);
-    msg_flags_[8] = find_Closest_Frame(selected_time,pointcloud_sp_msgs3_);
-    msg_flags_[9] = find_Closest_Frame(selected_time,pointcloud_sp_msgs4_);
+    msg_flags_[5]  = find_Closest_Frame(selected_time, camera_msgs0_);
+    msg_flags_[6]  = find_Closest_Frame(selected_time, camera_msgs1_);
+    msg_flags_[7]  = find_Closest_Frame(selected_time, camera_msgs2_);
+    msg_flags_[8]  = find_Closest_Frame(selected_time, camera_msgs3_);
+    msg_flags_[9]  = find_Closest_Frame(selected_time, camera_msgs4_);
+    msg_flags_[10] = find_Closest_Frame(selected_time, camera_msgs5_);
 
-    msg_flags_[10] = find_Closest_Frame(selected_time,camera_msgs0_);
-    msg_flags_[11] = find_Closest_Frame(selected_time,camera_msgs1_);
-    msg_flags_[12] = find_Closest_Frame(selected_time,camera_msgs2_);
-    msg_flags_[13] = find_Closest_Frame(selected_time,camera_msgs3_);
-    msg_flags_[14] = find_Closest_Frame(selected_time,camera_msgs4_);
-    msg_flags_[15] = find_Closest_Frame(selected_time,camera_msgs5_);
+    msg_flags_[11] = find_Closest_Frame(selected_time, car_msgs_);
 
-    msg_flags_[16]= find_Closest_Frame(selected_time,car_msgs_);
-
-    msg_flags_[17]= find_Closest_Frame(selected_time,cube_data_msgs0_);
-    msg_flags_[18]= find_Closest_Frame(selected_time,cube_data_msgs1_);
-    msg_flags_[19]= find_Closest_Frame(selected_time,cube_data_msgs2_);
-    msg_flags_[20]= find_Closest_Frame(selected_time,cube_data_msgs3_);
-    msg_flags_[21]= find_Closest_Frame(selected_time,cube_data_msgs4_);
+    msg_flags_[12] = find_Closest_Frame(selected_time, cube_data_msgs0_);
+    msg_flags_[13] = find_Closest_Frame(selected_time, cube_data_msgs1_);
+    msg_flags_[14] = find_Closest_Frame(selected_time, cube_data_msgs2_);
+    msg_flags_[15] = find_Closest_Frame(selected_time, cube_data_msgs3_);
+    msg_flags_[16] = find_Closest_Frame(selected_time, cube_data_msgs4_);
 
     packetCallbackMsg();
     finishProcessFlag_ = false;

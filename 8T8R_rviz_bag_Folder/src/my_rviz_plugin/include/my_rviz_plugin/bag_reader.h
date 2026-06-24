@@ -41,8 +41,7 @@ public:
   int find_Closest_Frame(const ros::Time& selected_time, std::vector<rosbag::MessageInstance>& camera_msgs);
   int getCurrentFrame() const;
   void setFinishProcessFlag(bool flag);
-  void setFloatDataFlag(bool flag);
-  void setSPDataFlag(bool flag);
+  void setSPFlag(bool flag);
   void selectMainRadar(int index);
   int getMainRadarPclSize();
   ros::Time getMainRadarTime(int curIdx);
@@ -89,15 +88,15 @@ private:
   std::condition_variable cv_;
   std::atomic<bool> playing_;
   std::atomic<bool> finishProcessFlag_;
-  std::atomic<bool> bPlayFloatData_;
-  std::atomic<bool> bPlaySPData_;
+  std::atomic<bool> is_sp_or_not_;
   std::atomic<int>  mainRadarIndex_;
 
   std::thread play_thread_;
   MessageCallback message_callback_;
   UpdateProgressBarCallback update_progress_bar_callback_;
   std::mutex frame_mutex;
-  const int MAX_TOPIC_NUM = 22;
+  const int MAX_TOPIC_NUM = 17;
+  // frame_msgs_ 布局: [0-4]float_data或SP_data [5-10]camera [11]car [12-16]cube_data
 };
 
 } // namespace my_rviz_plugin

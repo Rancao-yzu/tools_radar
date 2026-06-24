@@ -43,7 +43,6 @@ protected Q_SLOTS:
   void stepBackward();
   void updatePlayRate();
   void sliderValueChanged(int value);
-  void setPlayFloatFlag(int flag);
   void setPlaySPFlag(int flag);
   void selectMainRadar();
   void selectFolder();
@@ -73,7 +72,6 @@ private:
   QLabel* frame_sp_count_label_;
   QLabel* frame_id_label_;
   QComboBox* play_rate_combo_;
-  QCheckBox* play_float_data_;
   QCheckBox* play_sp_data_;
   QComboBox* select_main_radar_;
   QSlider* frame_slider_;
@@ -131,7 +129,6 @@ private:
   int frame_count4, frame_sp_count4;
 
   volatile bool bContinuePlayFlag;
-  bool bPlayFloatData_;
   bool bPlaySPData_;
   int mainRadarIndex_;
 

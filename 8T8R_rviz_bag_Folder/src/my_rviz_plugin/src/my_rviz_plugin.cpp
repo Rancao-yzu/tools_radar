@@ -16,6 +16,7 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   frame_count1(0), frame_sp_count1(0), frame_count2(0), frame_sp_count2(0), 
   frame_count3(0), frame_sp_count3(0), frame_count4(0), frame_sp_count4(0),
   mainRadarIndex_(0), current_bag_index_(-1), folder_mode_(false)
+  //mainRadarIndex_ 在 MyRvizPlugin 构造函数里 没有初始化 ，导致 readBagFile 中计算 maxVal 时是垃圾值
 {
   nh_ = ros::NodeHandle();
 
@@ -73,8 +74,6 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   frame_sp_count_label_ = new QLabel("Frame Count(SP): Radar(1-LT) 0;Radar(2-RT) 0;Radar(3-LB) 0;Radar(4-RB) 0");
   frame_id_label_ = new QLabel("Frame ID: N/A  Timestamp: N/A");
   play_rate_combo_ = new QComboBox;
-  play_float_data_ = new QCheckBox("Float");
-  play_float_data_->setChecked(false);
   play_sp_data_ = new QCheckBox("SP");
   play_sp_data_->setChecked(true);
   select_main_radar_ = new QComboBox;
@@ -133,7 +132,6 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   control_layout->addWidget(stop_button_);
   control_layout->addWidget(new QLabel("Play Rate:"));
   control_layout->addWidget(play_rate_combo_);
-  control_layout->addWidget(play_float_data_);
   control_layout->addWidget(play_sp_data_);
   control_layout->addWidget(select_main_radar_);
 
@@ -159,7 +157,6 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   connect(step_backward_button_, SIGNAL(clicked()), this, SLOT(stepBackward()));
   connect(play_rate_combo_, SIGNAL(currentIndexChanged(int)), this, SLOT(updatePlayRate()));
   connect(frame_slider_, SIGNAL(valueChanged(int)), this, SLOT(sliderValueChanged(int)));
-  connect(play_float_data_, SIGNAL(stateChanged(int)), this, SLOT(setPlayFloatFlag(int)));
   connect(play_sp_data_, SIGNAL(stateChanged(int)), this, SLOT(setPlaySPFlag(int)));
   connect(select_main_radar_, SIGNAL(currentIndexChanged(int)), this, SLOT(selectMainRadar()));
   connect(select_folder_button_, SIGNAL(clicked()), this, SLOT(selectFolder()));
@@ -172,7 +169,6 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   step_backward_button_->setEnabled(false);
   play_rate_combo_->setEnabled(false);
   frame_slider_->setEnabled(false);
-  play_float_data_->setEnabled(false);
   play_sp_data_->setEnabled(false);
   select_main_radar_->setEnabled(false);
 
@@ -222,7 +218,6 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   });// 设置进度条更新回调
 
   bContinuePlayFlag = false;
-  bPlayFloatData_ = false;
   bPlaySPData_ = true;
 
   select_main_radar_->setCurrentIndex(0); // 默认选择
@@ -257,60 +252,63 @@ void MyRvizPlugin::publishClosestMessages(const std::vector<rosbag::MessageInsta
                                           const std::vector<int>& msg_flag
                                           )
 { // 发布当前帧对应的所有传感器消息到ROS网络
-  // frame_msg 布局: [0-4]float_data [5-9]SP_data [10-15]camera [16]car [17-21]cube_data
+  // frame_msg 布局: [0-4]float_data或SP_data [5-10]camera [11]car [12-16]cube_data
   boost::posix_time::time_duration time_offset(8, 0, 0);// 设置时区偏移
 
   // car 信息
-  boost::shared_ptr<arbe_msgs::VehStatusOutput> car_status = frame_msg[16].instantiate<arbe_msgs::VehStatusOutput>();
-  if (car_status&&(msg_flag[16]>=0))
+  boost::shared_ptr<arbe_msgs::VehStatusOutput> car_status = frame_msg[11].instantiate<arbe_msgs::VehStatusOutput>();
+  if (car_status&&(msg_flag[11]>=0))
     car_pub_.publish(*car_status);
 
-  //—————float_data 信息—————//
-  if(bPlayFloatData_)
+  if(bPlaySPData_) // SP模式：播放SP_data + cube_data
   {
-    auto handleFloatData = [&](int frame_idx, int flag_idx, ros::Publisher& pub)
+    boost::shared_ptr<arbe_msgs::wfTiFrameRD> sp_data0 = frame_msg[0].instantiate<arbe_msgs::wfTiFrameRD>();
+    if (sp_data0 && (msg_flag[0]>=0))
     {
-      boost::shared_ptr<arbe_msgs::wfRawDataMsg> data = frame_msg[frame_idx].instantiate<arbe_msgs::wfRawDataMsg>();
-      if (data && (msg_flag[flag_idx]>=0))
-        pub.publish(*data);
-    };
-    handleFloatData(4, 4, pointcloud_pub4_);
-    handleFloatData(1, 1, pointcloud_pub1_);
-    handleFloatData(2, 2, pointcloud_pub2_);
-    handleFloatData(3, 3, pointcloud_pub3_);
-    // frame_id 显示用 float_data_0
-    boost::shared_ptr<arbe_msgs::wfRawDataMsg> pointcloud_data0 = frame_msg[0].instantiate<arbe_msgs::wfRawDataMsg>();
-    if (pointcloud_data0 && (msg_flag[0]>=0))
-    {
-      frame_id_label_->setText(QString("-Frame ID: %1").arg(pointcloud_data0->frame_id)
+      frame_id_label_->setText(QString("-Frame ID: %1").arg(sp_data0->frameID)
         +"  -Timestamp: "+QString(boost::posix_time::to_simple_string(
-          pointcloud_data0->header.stamp.toBoost()+time_offset).c_str()));
-      pointcloud_pub0_.publish(*pointcloud_data0);
+          sp_data0->header.stamp.toBoost()+time_offset).c_str()));
+      pointcloud_sp_pub0_.publish(*sp_data0);
     }
-  }
+    boost::shared_ptr<arbe_msgs::wfTiFrameRD> sp_data1 = frame_msg[1].instantiate<arbe_msgs::wfTiFrameRD>();
+    if (sp_data1 && (msg_flag[1]>=0)) pointcloud_sp_pub1_.publish(*sp_data1);
+    boost::shared_ptr<arbe_msgs::wfTiFrameRD> sp_data2 = frame_msg[2].instantiate<arbe_msgs::wfTiFrameRD>();
+    if (sp_data2 && (msg_flag[2]>=0)) pointcloud_sp_pub2_.publish(*sp_data2);
+    boost::shared_ptr<arbe_msgs::wfTiFrameRD> sp_data3 = frame_msg[3].instantiate<arbe_msgs::wfTiFrameRD>();
+    if (sp_data3 && (msg_flag[3]>=0)) pointcloud_sp_pub3_.publish(*sp_data3);
+    boost::shared_ptr<arbe_msgs::wfTiFrameRD> sp_data4 = frame_msg[4].instantiate<arbe_msgs::wfTiFrameRD>();
+    if (sp_data4 && (msg_flag[4]>=0)) pointcloud_sp_pub4_.publish(*sp_data4);
 
-  //—————SP_data 信息—————//
-  if(bPlaySPData_)
+    // cube_data
+    boost::shared_ptr<std_msgs::UInt8MultiArray> cube0 = frame_msg[12].instantiate<std_msgs::UInt8MultiArray>();
+    if (cube0 && (msg_flag[12]>=0)) cube_data_pub0_.publish(*cube0);
+    boost::shared_ptr<std_msgs::UInt8MultiArray> cube1 = frame_msg[13].instantiate<std_msgs::UInt8MultiArray>();
+    if (cube1 && (msg_flag[13]>=0)) cube_data_pub1_.publish(*cube1);
+    boost::shared_ptr<std_msgs::UInt8MultiArray> cube2 = frame_msg[14].instantiate<std_msgs::UInt8MultiArray>();
+    if (cube2 && (msg_flag[14]>=0)) cube_data_pub2_.publish(*cube2);
+    boost::shared_ptr<std_msgs::UInt8MultiArray> cube3 = frame_msg[15].instantiate<std_msgs::UInt8MultiArray>();
+    if (cube3 && (msg_flag[15]>=0)) cube_data_pub3_.publish(*cube3);
+    boost::shared_ptr<std_msgs::UInt8MultiArray> cube4 = frame_msg[16].instantiate<std_msgs::UInt8MultiArray>();
+    if (cube4 && (msg_flag[16]>=0)) cube_data_pub4_.publish(*cube4);
+  }
+  else // float模式：只播放float_data
   {
-    auto handleSPData = [&](int frame_idx, int flag_idx, ros::Publisher& pub)
+    boost::shared_ptr<arbe_msgs::wfRawDataMsg> float_data0 = frame_msg[0].instantiate<arbe_msgs::wfRawDataMsg>();
+    if (float_data0 && (msg_flag[0]>=0))
     {
-      boost::shared_ptr<arbe_msgs::wfTiFrameRD> data = frame_msg[frame_idx].instantiate<arbe_msgs::wfTiFrameRD>();
-      if (data && (msg_flag[flag_idx]>=0))
-        pub.publish(*data);
-    };
-    handleSPData(9, 9, pointcloud_sp_pub4_);
-    handleSPData(6, 6, pointcloud_sp_pub1_);
-    handleSPData(7, 7, pointcloud_sp_pub2_);
-    handleSPData(8, 8, pointcloud_sp_pub3_);
-    // frame_id 显示用 SP radar_0
-    boost::shared_ptr<arbe_msgs::wfTiFrameRD> pointcloudsp_data0 = frame_msg[5].instantiate<arbe_msgs::wfTiFrameRD>();
-    if (pointcloudsp_data0&&(msg_flag[5]>=0))
-    {
-      frame_id_label_->setText(QString("-Frame ID: %1").arg(pointcloudsp_data0->frameID)
+      frame_id_label_->setText(QString("-Frame ID: %1").arg(float_data0->frame_id)
         +"  -Timestamp: "+QString(boost::posix_time::to_simple_string(
-          pointcloudsp_data0->header.stamp.toBoost()+time_offset).c_str()));
-      pointcloud_sp_pub0_.publish(*pointcloudsp_data0);
+          float_data0->header.stamp.toBoost()+time_offset).c_str()));
+      pointcloud_pub0_.publish(*float_data0);
     }
+    boost::shared_ptr<arbe_msgs::wfRawDataMsg> float_data1 = frame_msg[1].instantiate<arbe_msgs::wfRawDataMsg>();
+    if (float_data1 && (msg_flag[1]>=0)) pointcloud_pub1_.publish(*float_data1);
+    boost::shared_ptr<arbe_msgs::wfRawDataMsg> float_data2 = frame_msg[2].instantiate<arbe_msgs::wfRawDataMsg>();
+    if (float_data2 && (msg_flag[2]>=0)) pointcloud_pub2_.publish(*float_data2);
+    boost::shared_ptr<arbe_msgs::wfRawDataMsg> float_data3 = frame_msg[3].instantiate<arbe_msgs::wfRawDataMsg>();
+    if (float_data3 && (msg_flag[3]>=0)) pointcloud_pub3_.publish(*float_data3);
+    boost::shared_ptr<arbe_msgs::wfRawDataMsg> float_data4 = frame_msg[4].instantiate<arbe_msgs::wfRawDataMsg>();
+    if (float_data4 && (msg_flag[4]>=0)) pointcloud_pub4_.publish(*float_data4);
   }
 
   //—————Camera_Data—————//
@@ -320,25 +318,12 @@ void MyRvizPlugin::publishClosestMessages(const std::vector<rosbag::MessageInsta
     if (data && (msg_flag[flag_idx] >= 0)) 
         pub.publish(*data);
   };
-  HandleCameraData(10, 10, camera_pub0_);
-  HandleCameraData(11, 11, camera_pub1_);
-  HandleCameraData(12, 12, camera_pub2_);
-  HandleCameraData(13, 13, camera_pub3_);
-  HandleCameraData(14, 14, camera_pub4_);
-  HandleCameraData(15, 15, camera_pub5_);
-
-  //—————cube_data 信息—————//
-  auto handleCubeData = [&](int frame_idx, int flag_idx, ros::Publisher& pub)
-  {
-    boost::shared_ptr<std_msgs::UInt8MultiArray> data = frame_msg[frame_idx].instantiate<std_msgs::UInt8MultiArray>();
-    if (data && (msg_flag[flag_idx]>=0))
-      pub.publish(*data);
-  };
-  handleCubeData(17, 17, cube_data_pub0_);
-  handleCubeData(18, 18, cube_data_pub1_);
-  handleCubeData(19, 19, cube_data_pub2_);
-  handleCubeData(20, 20, cube_data_pub3_);
-  handleCubeData(21, 21, cube_data_pub4_);
+  HandleCameraData(5, 5, camera_pub0_);
+  HandleCameraData(6, 6, camera_pub1_);
+  HandleCameraData(7, 7, camera_pub2_);
+  HandleCameraData(8, 8, camera_pub3_);
+  HandleCameraData(9, 9, camera_pub4_);
+  HandleCameraData(10, 10, camera_pub5_);
 }
 
 void MyRvizPlugin::selectBagFile()
@@ -424,7 +409,6 @@ void MyRvizPlugin::readBagFile()
     step_backward_button_->setEnabled(false);
     play_rate_combo_->setEnabled(false);
     frame_slider_->setEnabled(false);
-    play_float_data_->setEnabled(false);
     play_sp_data_->setEnabled(false);
     select_main_radar_->setEnabled(false);
     current_bag_label_->setText("Current Bag: " + QString::fromStdString(path));
@@ -454,10 +438,8 @@ void MyRvizPlugin::readBagFile()
     else if (mainRadarIndex_ == 2) { c = frame_count2; sp = frame_sp_count2; }
     else if (mainRadarIndex_ == 3) { c = frame_count3; sp = frame_sp_count3; }
     else if (mainRadarIndex_ == 4) { c = frame_count4; sp = frame_sp_count4; }
-    int maxVal = 0;
-    if (bPlayFloatData_) maxVal = std::max(maxVal, c);
-    if (bPlaySPData_)    maxVal = std::max(maxVal, sp);
-    ROS_INFO("maxVal: %d", maxVal);
+    int maxVal = bPlaySPData_ ? sp : c;
+    ROS_INFO("readBagFile-maxVal: %d", maxVal);
 
     frame_spinner_->setMaximum(maxVal);
     frame_slider_->setMaximum(maxVal);
@@ -471,7 +453,6 @@ void MyRvizPlugin::readBagFile()
     step_backward_button_->setEnabled(true);
     play_rate_combo_->setEnabled(true);
     frame_slider_->setEnabled(true);
-    play_float_data_->setEnabled(true);
     play_sp_data_->setEnabled(true);
     select_main_radar_->setEnabled(true);
 
@@ -515,7 +496,6 @@ void MyRvizPlugin::playBag()
   step_backward_button_->setEnabled(false);
   play_rate_combo_->setEnabled(false);
   frame_slider_->setEnabled(false);
-  play_float_data_->setEnabled(false);
   play_sp_data_->setEnabled(false);
   select_main_radar_->setEnabled(false);
 }
@@ -533,7 +513,6 @@ void MyRvizPlugin::stopBag()
   step_backward_button_->setEnabled(true);
   play_rate_combo_->setEnabled(true);
   frame_slider_->setEnabled(true);
-  play_float_data_->setEnabled(true);
   play_sp_data_->setEnabled(true);
   select_main_radar_->setEnabled(true);
 }
@@ -557,37 +536,10 @@ void MyRvizPlugin::sliderValueChanged(int value)//播放进度条
   }
 }
 
-void MyRvizPlugin::setPlayFloatFlag(int flag)
-{
-  bPlayFloatData_ = flag;
-  bag_reader_->setFloatDataFlag(flag);
-
-  int c = 0, sp = 0;
-  if (mainRadarIndex_ == 0) { c = frame_count0; sp = frame_sp_count0; }
-  else if (mainRadarIndex_ == 1) { c = frame_count1; sp = frame_sp_count1; }
-  else if (mainRadarIndex_ == 2) { c = frame_count2; sp = frame_sp_count2; }
-  else if (mainRadarIndex_ == 3) { c = frame_count3; sp = frame_sp_count3; }
-  else if (mainRadarIndex_ == 4) { c = frame_count4; sp = frame_sp_count4; }
-  int maxVal = 0;
-  if (bPlayFloatData_) maxVal = std::max(maxVal, c);
-  if (bPlaySPData_)    maxVal = std::max(maxVal, sp);
-
-  frame_spinner_->setMaximum(maxVal);
-  frame_slider_->setMaximum(maxVal);
-  ROS_INFO("maxVal: %d", maxVal);
-  ROS_INFO("frame_spinner_->value(): %d", frame_spinner_->value());
-
-  if(frame_spinner_->value() >= frame_spinner_->maximum())
-  {
-    frame_spinner_->setValue(0);
-    frame_slider_->setValue(0);
-  }
-}
-
 void MyRvizPlugin::setPlaySPFlag(int flag)
 {
   bPlaySPData_ = flag;
-  bag_reader_->setSPDataFlag(flag);
+  bag_reader_->setSPFlag(flag);
 
   int c = 0, sp = 0;
   if (mainRadarIndex_ == 0) { c = frame_count0; sp = frame_sp_count0; }
@@ -595,12 +547,11 @@ void MyRvizPlugin::setPlaySPFlag(int flag)
   else if (mainRadarIndex_ == 2) { c = frame_count2; sp = frame_sp_count2; }
   else if (mainRadarIndex_ == 3) { c = frame_count3; sp = frame_sp_count3; }
   else if (mainRadarIndex_ == 4) { c = frame_count4; sp = frame_sp_count4; }
-  int maxVal = 0;
-  if (bPlayFloatData_) maxVal = std::max(maxVal, c);
-  if (bPlaySPData_)    maxVal = std::max(maxVal, sp);
+  int maxVal = bPlaySPData_ ? sp : c;
 
   frame_spinner_->setMaximum(maxVal);
   frame_slider_->setMaximum(maxVal);
+  ROS_INFO("sp is %s, change maxVal: %d", bPlaySPData_ ? "true" : "false", maxVal);
 
   if(frame_spinner_->value() >= frame_spinner_->maximum())
   {
@@ -621,9 +572,7 @@ void MyRvizPlugin::selectMainRadar()
   else if (mainRadarIndex_ == 2) { c = frame_count2; sp = frame_sp_count2; }
   else if (mainRadarIndex_ == 3) { c = frame_count3; sp = frame_sp_count3; }
   else if (mainRadarIndex_ == 4) { c = frame_count4; sp = frame_sp_count4; }
-  int maxVal = 0;
-  if (bPlayFloatData_) maxVal = std::max(maxVal, c);
-  if (bPlaySPData_)    maxVal = std::max(maxVal, sp);
+  int maxVal = bPlaySPData_ ? sp : c;
 
   frame_spinner_->setMaximum(maxVal);
   frame_slider_->setMaximum(maxVal);

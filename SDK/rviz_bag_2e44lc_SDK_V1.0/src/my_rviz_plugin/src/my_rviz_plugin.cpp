@@ -13,7 +13,8 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   : rviz::Panel(parent), bag_reader_(new BagReader()), 
   frame_count0(0), frame_sp_count0(0), 
   frame_count1(0), frame_sp_count1(0), frame_count2(0), frame_sp_count2(0), 
-  frame_count3(0), frame_sp_count3(0), frame_count4(0), frame_sp_count4(0)
+  frame_count3(0), frame_sp_count3(0), frame_count4(0), frame_sp_count4(0),
+  mainRadarIndex_(0), 
 {
   nh_ = ros::NodeHandle();
 

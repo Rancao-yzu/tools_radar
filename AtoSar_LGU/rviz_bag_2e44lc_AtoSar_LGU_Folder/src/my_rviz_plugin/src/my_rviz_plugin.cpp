@@ -17,6 +17,7 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   frame_count0(0), 
   frame_count1(0),  frame_count2(0), 
   frame_count3(0), frame_count4(0),
+  mainRadarIndex_(0),
   current_bag_index_(-1), folder_mode_(false)
 {
   nh_ = ros::NodeHandle();

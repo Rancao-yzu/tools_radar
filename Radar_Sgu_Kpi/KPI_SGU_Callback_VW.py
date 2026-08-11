@@ -7,7 +7,6 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import rosbag
-import datetime
 import csv
 import os
 import numpy as np
@@ -251,7 +250,6 @@ class TimeStampMatcher:
         # 创建IMU时间戳数组用于快速查找
         imu_timestamps = np.array([imu['timestamp'] for imu in self.imu_data])
         matched_records = []
-        match_count = 0
         skipped_count = 0
         
         for target in radar_targets:
@@ -295,15 +293,25 @@ class TimeStampMatcher:
                     'time_diff': time_diff,
                 }
                 
-                matched_records.append(matched_record)
-                match_count += 1
+                # 记录匹配到的IMU索引，用于后续按IMU筛选
+                matched_records.append((idx, matched_record))
             else:
                 skipped_count += 1
         
-        if match_count > 0:
-            self.log(f"    匹配成功: {match_count} 个目标 (跳过 {skipped_count} 个时间差过大的目标)")
+        # 每个IMU只保留与其最相近的3个目标 (按 |RxReal - GT_LngDist| 从小到大排序)
+        imu_target_map = {}
+        for imu_idx, record in matched_records:
+            imu_target_map.setdefault(imu_idx, []).append(record)
+        
+        final_records = []
+        for records in imu_target_map.values():
+            records.sort(key=lambda r: abs(r['RxReal'] - r['GT_LngDist']))
+            final_records.extend(records[:3])
+        
+        if final_records:
+            self.log(f"    匹配成功: {len(final_records)} 个目标 (每个IMU保留最多3个, 跳过 {skipped_count} 个时间差过大的目标)")
             # 保存CSV文件
-            return self.save_radar_csv(bag_name, radar_name, matched_records, output_dir)
+            return self.save_radar_csv(bag_name, radar_name, final_records, output_dir)
         else:
             self.log(f"    没有匹配到目标 (跳过 {skipped_count} 个时间差过大的目标)")
             return None
@@ -359,7 +367,7 @@ class TimeStampMatcher:
 class MatcherGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("雷达-IMU 时间戳匹配工具")
+        self.root.title("雷达-IMU 时间戳匹配工具 VW")
         self.root.geometry("700x550")
         
         # 初始化变量
@@ -381,6 +389,15 @@ class MatcherGUI:
 
     def setup_ui(self):
         """设置用户界面"""
+        # 扁平化样式: 使用clam主题, 纯白背景, 去除控件立体边框
+        self.root.configure(bg='#ffffff')
+        style = ttk.Style(self.root)
+        style.theme_use('clam')
+        style.configure('TButton', relief='flat', borderwidth=0, background="#ff8a03", foreground='#333333')
+        style.configure('TEntry', relief='flat', borderwidth=0, fieldbackground="#ffecd7")
+        style.configure('TFrame', relief='flat', background='#ffffff')
+        style.configure('TLabel', relief='flat', background="#ffffff", foreground='#333333')
+
         # 主框架
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -390,8 +407,11 @@ class MatcherGUI:
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
         
+        # 标题
+        ttk.Label(main_frame, text="雷达-IMU 时间戳匹配工具 VW", font=('Arial', 16, 'bold'), anchor='center').grid(row=0, column=0, columnspan=2, sticky=tk.W + tk.E, pady=(0, 10))
+        
         # 行计数器
-        row = 0
+        row = 1
         
         # Bag文件文件夹选择
         ttk.Label(main_frame, text="选择bag文件文件夹:").grid(row=row, column=0, sticky=tk.W, pady=5)
@@ -404,7 +424,7 @@ class MatcherGUI:
         row += 1
         
         # 雷达信息标签
-        self.radar_info_label = ttk.Label(main_frame, text="将处理4个雷达: WFRAFL, WFRAFR, WFRARL, WFRARR")
+        self.radar_info_label = ttk.Label(main_frame, text="将处理4个雷达: WFRAFL, WFRAFR, WFRARL, WFRARR，")
         self.radar_info_label.grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
         row += 1
         
@@ -431,7 +451,7 @@ class MatcherGUI:
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=12, wrap=tk.WORD, font=('Consolas', 9))
+        self.log_text = scrolledtext.ScrolledText(log_frame, height=12, wrap=tk.WORD, font=('Consolas', 9), relief='flat', bg="#fffaf5")
         self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
     def select_folder(self):

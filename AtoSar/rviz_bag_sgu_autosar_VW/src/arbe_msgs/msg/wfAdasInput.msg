@@ -1,0 +1,44 @@
+std_msgs/Header header
+uint16 frameID
+bool bBSDEnable
+bool bLCAEnable
+bool bDOWEnable
+bool bRCWEnable
+
+bool bRCTAEnable
+bool bRCTBEnable
+bool bFCTAEnable
+bool bFCTBEnable
+
+bool bTGUEnable
+bool bELKEnable
+bool bESSEnable
+bool bUserDefineEnable
+
+float32 actual_spd           
+float32 yaw_rate             
+float32 lat_accel            
+float32 long_accel           
+uint8 yaw_rate_sign 
+uint8 actual_gear
+uint8 turn_light_left
+uint8 turn_light_right
+uint8 open_door_left_top
+uint8 open_door_right_top
+uint8 open_door_left_bottom
+uint8 open_door_right_bottom
+uint8 actual_spd_valid
+uint8 yaw_rate_valid
+uint8 lat_accel_valid
+uint8 long_accel_valid
+float32 steer_angle          
+float32 fl_whl_spd           
+float32 fr_whl_spd           
+float32 rl_whl_spd           
+float32 rr_whl_spd           
+uint8 fl_whl_spd_valid
+uint8 rr_whl_spd_valid
+uint8 fr_whl_spd_valid
+uint8 rl_whl_spd_valid
+uint8 steer_angle_sign
+uint8 wiper_gear

@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 a = Analysis(
-    ['KPI_SGU_Callback_VW.py'],
+    ['KPI_SGU_Callback_VW_in.py'],
     pathex=[],
     binaries=[],
     datas=[],

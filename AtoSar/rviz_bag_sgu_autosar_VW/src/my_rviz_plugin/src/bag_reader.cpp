@@ -3,6 +3,12 @@
 #include <chrono>
 #include <thread>
 
+// IMU与雷达时间对齐偏移量(秒)。
+// 正值: IMU查找时间向前(早于)雷达selected_time；
+// 负值: IMU查找时间向后(晚于)雷达selected_time。
+// 45ms ≈ 0.045s (IMU 97.5Hz下约4-5个采样点)
+const double IMU_TIME_OFFSET_SEC = -0.045;
+
 namespace my_rviz_plugin
 {
 
@@ -419,7 +425,8 @@ void BagReader::jumpToFrame(int frame_number)// 跳转到指定帧，并查找�
 
       msg_flags_[17]= find_Closest_Frame(selected_time,pointcloud_gt_msgs3_);
       msg_flags_[18]= find_Closest_Frame(selected_time,pointcloud_gt_msgs4_);
-      msg_flags_[19]= find_Closest_Frame(selected_time,IMU_msgs_);
+      // IMU与雷达非同一系统，IMU数据需按偏移量对齐(正向前/负向后)
+      msg_flags_[19]= find_Closest_Frame(selected_time - ros::Duration(IMU_TIME_OFFSET_SEC), IMU_msgs_);
 
       packetCallbackMsg();// 获取当前帧消息
       message_callback_(frame_msgs_,current_frame_,msg_flags_);
@@ -553,7 +560,8 @@ void BagReader::playLoop()
 
     msg_flags_[17]= find_Closest_Frame(selected_time,pointcloud_gt_msgs3_);
     msg_flags_[18]= find_Closest_Frame(selected_time,pointcloud_gt_msgs4_);
-        msg_flags_[19]= find_Closest_Frame(selected_time,IMU_msgs_);
+    // IMU与雷达非同一系统，IMU数据需按偏移量对齐(正向前/负向后)
+    msg_flags_[19]= find_Closest_Frame(selected_time - ros::Duration(IMU_TIME_OFFSET_SEC), IMU_msgs_);
 
     packetCallbackMsg();
     finishProcessFlag_ = false;

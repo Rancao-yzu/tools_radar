@@ -15,9 +15,10 @@ import queue
 
 
 class TimeStampMatcher:
-    def __init__(self, bag_files,  log_queue):
+    def __init__(self, bag_files,  log_queue, imu_time_shift_ms=0):
         self.bag_files = bag_files
         self.log_queue = log_queue
+        self.imu_time_shift_ms = imu_time_shift_ms  # IMU时间戳偏移 (ms), 正数表示向后延时
         
         # 定义4个雷达话题
         self.radar_topics = [
@@ -247,8 +248,8 @@ class TimeStampMatcher:
                 self.log(f"    没有IMU数据")
             return None
         
-        # 创建IMU时间戳数组用于快速查找
-        imu_timestamps = np.array([imu['timestamp'] for imu in self.imu_data])
+        # 创建IMU时间戳数组用于快速查找 (按用户设定向后延时 x ms)
+        imu_timestamps = np.array([imu['timestamp'] for imu in self.imu_data]) + self.imu_time_shift_ms / 1000.0
         matched_records = []
         skipped_count = 0
         
@@ -375,6 +376,7 @@ class MatcherGUI:
         self.matcher = None
         self.processing = False
         self.log_queue = queue.Queue()
+        self.imu_shift_var = tk.StringVar(value="0")  # IMU时间偏移 (ms)
 
         
         # 设置UI
@@ -431,6 +433,15 @@ class MatcherGUI:
         # 输出结构说明
         self.struct_info_label = ttk.Label(main_frame, text="每个bag文件将创建一个独立文件夹，包含4个雷达的CSV文件")
         self.struct_info_label.grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
+        row += 1
+        
+        # IMU时间偏移输入
+        ttk.Label(main_frame, text="IMU时间偏移 x (ms, -120~120):").grid(row=row, column=0, sticky=tk.W, pady=5)
+        shift_frame = ttk.Frame(main_frame)
+        shift_frame.grid(row=row, column=1, sticky=tk.W, pady=5)
+        self.imu_shift_entry = ttk.Entry(shift_frame, textvariable=self.imu_shift_var, width=10)
+        self.imu_shift_entry.pack(side=tk.LEFT)
+        ttk.Label(shift_frame, text="默认0 (正数=IMU向后延时)").pack(side=tk.LEFT, padx=5)
         row += 1
         
         # 开始按钮
@@ -507,6 +518,16 @@ class MatcherGUI:
             messagebox.showwarning("警告", "没有找到bag文件！")
             return
 
+        # 校验IMU时间偏移输入 (范围 -120 ~ +120 ms)
+        try:
+            imu_shift_ms = int(self.imu_shift_var.get())
+        except ValueError:
+            messagebox.showwarning("警告", "IMU时间偏移x必须为整数！")
+            return
+        if not (-120 <= imu_shift_ms <= 120):
+            messagebox.showwarning("警告", "IMU时间偏移x必须在 -120 ~ +120 ms 之间！")
+            return
+
         # 禁用开始按钮
         self.start_button.config(state=tk.DISABLED)
         
@@ -514,11 +535,13 @@ class MatcherGUI:
         self.log_text.delete(1.0, tk.END)
         self.log("开始时间戳匹配...")
         self.log("=" * 50)
+        self.log(f"IMU时间偏移: {imu_shift_ms} ms")
         
         # 在新线程中处理
         self.matcher = TimeStampMatcher(
             self.bag_files,
-            self.log_queue
+            self.log_queue,
+            imu_time_shift_ms=imu_shift_ms
         )
         
         self.processing = True

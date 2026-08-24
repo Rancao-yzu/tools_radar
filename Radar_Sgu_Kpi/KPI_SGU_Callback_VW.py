@@ -306,9 +306,10 @@ class TimeStampMatcher:
         
         final_records = []
         for records in imu_target_map.values():
-            records.sort(key=lambda r: abs(r['RxReal'] - r['GT_LngDist']))
+            records.sort(key=lambda r: abs(r['RxReal'] - r['GT_LngDist']) + abs(r['RyReal'] - r['GT_LatDist']))
             final_records.extend(records[:3])
-        
+
+        final_records.sort(key=lambda r: r['frame_id'])
         if final_records:
             self.log(f"    匹配成功: {len(final_records)} 个目标 (每个IMU保留最多3个, 跳过 {skipped_count} 个时间差过大的目标)")
             # 保存CSV文件

@@ -1,0 +1,9 @@
+<library path="lib/libmy_rviz_plugin">
+  <class name="my_rviz_plugin/MyRvizPlugin"
+         type="my_rviz_plugin::MyRvizPlugin"
+         base_class_type="rviz::Panel">
+    <description>
+      AutoSar Radar visualization panel
+    </description>
+  </class>
+</library>

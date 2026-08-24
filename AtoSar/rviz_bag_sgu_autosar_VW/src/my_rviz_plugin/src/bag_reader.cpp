@@ -45,7 +45,7 @@ void BagReader::readBagFile// 读取bag文件，并按话题分类存储消息�
 
   camera_msgs0_.clear();
   camera_msgs1_.clear();
-  camera_msgs2_.clear();    "/wf/imu_data/parsed",
+  camera_msgs2_.clear();
   camera_msgs3_.clear();
   camera_msgs4_.clear();
   camera_msgs5_.clear();

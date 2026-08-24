@@ -106,7 +106,7 @@ void BagReader::readBagFile// 读取bag文件，并按话题分类存储消息�
   frameCount4 = pointcloud_msgs4_.size();
 
   // 添加调试信息，检查GT数据是否存在
-  ROS_INFO(" pointcloud_msgs: %lu", frameCount3);
+  ROS_INFO(" pointcloud_msgs: %u", frameCount3);
 
   // 以主雷达首帧时间为T0,按INTERVAL_SEC切片,计算区间总数
   recomputeIntervals();

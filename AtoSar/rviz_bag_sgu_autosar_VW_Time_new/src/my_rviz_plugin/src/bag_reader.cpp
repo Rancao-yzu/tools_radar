@@ -6,7 +6,7 @@
 namespace my_rviz_plugin
 {
 
-// 15ms/区间(雷达66ms±2ms,IMU10ms±2ms),区间内各topic的所有msg全部发布
+// INTERVAL_SEC/区间(雷达66ms±2ms,IMU10ms±2ms),区间内各topic的所有msg全部发布
 const double BagReader::INTERVAL_SEC = 0.005;
 
 BagReader::BagReader() : current_frame_(0), play_rate_(1.0), playing_(false), finishProcessFlag_(true), bPlaySPFlag_(false), mainRadarIndex_(3), interval_count_(0)

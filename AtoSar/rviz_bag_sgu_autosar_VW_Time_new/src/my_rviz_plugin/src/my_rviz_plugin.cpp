@@ -203,16 +203,11 @@ bool MyRvizPlugin::handleServiceRequest(wf_srvs::PlaySingleFrame::Request &req,
       if(req.status == 0)
         ROS_INFO("Received data: radar_pos = %d, frame_id = %d ,req.status=%d", req.radar_pos, req.frame_id,req.status);
       else if(req.status == 1){
-
         bag_reader_->setFinishProcessFlag(true);
-
         ROS_INFO("--------Received data: radar_pos = %d, frame_id = %d,req.status=%d", req.radar_pos, req.frame_id,req.status);
-
-      }
-
-      else
+      }else{
         ROS_INFO("Play single frame service error!");
-
+      }
       res.success = true;
     }
     return true;  // 表示服务成功响应

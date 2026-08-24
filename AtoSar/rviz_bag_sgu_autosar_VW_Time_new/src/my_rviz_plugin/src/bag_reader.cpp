@@ -7,18 +7,16 @@ namespace my_rviz_plugin
 {
 
 // 15ms/区间(雷达66ms±2ms,IMU10ms±2ms),区间内各topic的所有msg全部发布
-const double BagReader::INTERVAL_SEC = 0.015;
+const double BagReader::INTERVAL_SEC = 0.005;
 
 BagReader::BagReader() : current_frame_(0), play_rate_(1.0), playing_(false), finishProcessFlag_(true), bPlaySPFlag_(false), mainRadarIndex_(3), interval_count_(0)
 {   }
 
 BagReader::~BagReader()// 析构函数，确保播放线程安全退出，并关闭bag文件
 {
-  if (playing_)
-  {
-    playing_ = false;
-    if (play_thread_.joinable())  play_thread_.join();
-  }
+  stopBag();  // 若正在播放则停止并join;若已结束则playing_已为false
+  // 兜底:播放自然结束后playing_=false但play_thread_仍joinable,必须join否则std::thread析构会std::terminate
+  if (play_thread_.joinable())  play_thread_.join();
   bag_.close();
 }
 
@@ -372,7 +370,7 @@ void BagReader::playLoop()
       while(!finishProcessFlag_ && playing_)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    
+
     std::this_thread::sleep_for(
         std::chrono::milliseconds(static_cast<int>(INTERVAL_SEC * 1000.0 / play_rate_))
     );

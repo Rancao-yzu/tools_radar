@@ -2,7 +2,7 @@
 <package format="2">
   <name>my_rviz_plugin</name>
   <version>1.0.0</version>
-  <description>AutoSar Radar RViz Plugin (Release)</description>
+  <description>Radar RViz Plugin (Release)</description>
   <maintainer email="ran.cao@weifu.com.cn">Your Name</maintainer>
   <license>Proprietary</license>
 

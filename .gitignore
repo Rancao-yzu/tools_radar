@@ -4,3 +4,4 @@ devel
 *.pyc
 **/.vscode
 **/OUT
+libmy_rviz_plugin.so

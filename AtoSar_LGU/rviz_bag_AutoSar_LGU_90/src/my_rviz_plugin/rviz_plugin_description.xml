@@ -1,0 +1,7 @@
+<library path="lib/libmy_rviz_plugin">
+  <class name="my_rviz_plugin::MyRvizPlugin" type="my_rviz_plugin::MyRvizPlugin" base_class_type="rviz::Panel">
+    <description>
+      Example RViz Panel Plugin to select and read bag files.
+    </description>
+  </class>
+</library>

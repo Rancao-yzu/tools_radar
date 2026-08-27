@@ -5,6 +5,11 @@
 所有插件默认 publish 的topic：
 - /wf/car_id6/parsed
 - /cv_camera_/image_raw/compressed
+
+启动:`bash start.sh` 或  `python3 start.py`
+
+> # **非开发者不允许更改Readme!**
+
 ## 对应版本
 
 ### 8T8R 项目

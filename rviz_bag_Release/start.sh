@@ -37,10 +37,10 @@ ln -sf "$SELECTED" "$TARGET"
 # 设置 ROS 环境
 source /opt/ros/noetic/setup.bash
 export LD_LIBRARY_PATH="$LIB_DIR:$LD_LIBRARY_PATH"
-export ROS_PACKAGE_PATH="$SCRIPT_DIR:$ROS_PACKAGE_PATH"
+export ROS_PACKAGE_PATH="$SCRIPT_DIR/launch:$ROS_PACKAGE_PATH"
 export CMAKE_PREFIX_PATH="$SCRIPT_DIR:$CMAKE_PREFIX_PATH"
 
 echo "插件注册:"
 rospack plugins --attrib=plugin rviz 2>/dev/null
 echo "正在启动 AutoSar Radar RViz 插件..."
-rviz -d "$SCRIPT_DIR/config.rviz"
+rviz -d "$SCRIPT_DIR/launch/config.rviz"

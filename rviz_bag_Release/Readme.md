@@ -39,6 +39,11 @@
   - /wf/frame_rd_data/ti/radar_
   - /wf/corner_radar/rd_data_
 
+- lib/rviz_bag_simulate.so
+  - /wf/corner_radar/parsed/float_data_
+  - /wf/frame_rd_data/ti/radar_
+  - /wf/corner_radar/simulate_data_
+
 
 ### AtoSar_LGU 项目
 - lib/rviz_bag_AutoSar_LGU_90.so

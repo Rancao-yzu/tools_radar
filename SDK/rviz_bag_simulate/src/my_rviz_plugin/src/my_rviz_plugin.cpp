@@ -68,8 +68,8 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   step_backward_button_ = new QPushButton("<-");
   frame_spinner_ = new QSpinBox;
   step_spinner_ = new QSpinBox;
-  frame_count_label_ = new QLabel("Frame Count: Radar(1-LT) 0;Radar(2-RT) 0;Radar(3-LB) 0;Radar(4-RB) 0");
-  frame_sp_count_label_ = new QLabel("Frame Count(SP): Radar(1-LT) 0;Radar(2-RT) 0;Radar(3-LB) 0;Radar(4-RB) 0");
+  frame_count_label_ = new QLabel("Frame : Radar(1-LT) 0;Radar(2-RT) 0;Radar(3-LB) 0;Radar(4-RB) 0");
+  frame_sp_count_label_ = new QLabel("Frame (SP): Radar(1-LT) 0;Radar(2-RT) 0;Radar(3-LB) 0;Radar(4-RB) 0");
   frame_id_label_ = new QLabel("Frame ID: N/A  Timestamp: N/A");
   play_rate_combo_ = new QComboBox;
   play_sp_date_ = new QCheckBox("SP");
@@ -456,15 +456,20 @@ void MyRvizPlugin::readBagFile()// 2025/9/17
     
     bag_reader_->readBagFile(path, frame_count0, frame_sp_count0,frame_count1, frame_sp_count1, frame_count2, frame_sp_count2,
       frame_count3, frame_sp_count3, frame_count4, frame_sp_count4);
-    frame_count_label_->setText("Frame Count: Radar(0) " + QString::number(frame_count0) + ";Radar(1-LT) " + QString::number(frame_count1) +
+    frame_count_label_->setText("Frame : Radar(0) " + QString::number(frame_count0) + ";Radar(1-LT) " + QString::number(frame_count1) +
       ";Radar(2-RT) " + QString::number(frame_count2) +";Radar(3-LB) " + QString::number(frame_count3) + ";Radar(4-RB) " + QString::number(frame_count4));
-    frame_sp_count_label_->setText("Frame Count(SP): Radar(0) " + QString::number(frame_sp_count0) + ";Radar(1-LT) " + QString::number(frame_sp_count1) +
+    frame_sp_count_label_->setText("Frame (SP): Radar(0) " + QString::number(frame_sp_count0) + ";Radar(1-LT) " + QString::number(frame_sp_count1) +
       ";Radar(2-RT) " + QString::number(frame_sp_count2) +";Radar(3-LB) " + QString::number(frame_sp_count3) + ";Radar(4-RB) " + QString::number(frame_sp_count4));
    
    
+    // 复位控件时屏蔽信号，避免触发jumpToFrame在read阶段发布首帧
+    frame_spinner_->blockSignals(true);
+    frame_slider_->blockSignals(true);
     selectMainRadar();
     frame_spinner_->setValue(0);
     frame_slider_->setValue(0);
+    frame_spinner_->blockSignals(false);
+    frame_slider_->blockSignals(false);
     
 
     play_button_->setEnabled(true);

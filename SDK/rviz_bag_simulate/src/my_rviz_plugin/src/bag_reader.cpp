@@ -675,7 +675,7 @@ void BagReader::playLoop()
   if (current_frame_ != 0)//2025/9/17
     current_frame_=current_frame_+1;
 
-  for (size_t i = 0; i < mainRadarSize; ++i) 
+  for (size_t i = current_frame_; i < mainRadarSize; ++i) 
   {
     while(!finishProcessFlag_)
       std::this_thread::sleep_for(std::chrono::milliseconds(1));

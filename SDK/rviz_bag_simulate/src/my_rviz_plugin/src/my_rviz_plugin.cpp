@@ -60,8 +60,8 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   service4_ = nh_.advertiseService("/play_single_frame_4", &MyRvizPlugin::handleServiceRequest, this);
 
   bag_file_path_ = new QLineEdit;
-  select_button_ = new QPushButton("Select Bag File");
-  read_button_ = new QPushButton("Read Bag File");
+  select_button_ = new QPushButton("Select");
+  read_button_ = new QPushButton("Read");
   play_button_ = new QPushButton("Play");
   stop_button_ = new QPushButton("Stop");
   step_forward_button_ = new QPushButton("->");
@@ -69,7 +69,7 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   frame_spinner_ = new QSpinBox;
   step_spinner_ = new QSpinBox;
   frame_count_label_ = new QLabel("Frame : Radar(1-LT) 0;Radar(2-RT) 0;Radar(3-LB) 0;Radar(4-RB) 0");
-  frame_sp_count_label_ = new QLabel("Frame (SP): Radar(1-LT) 0;Radar(2-RT) 0;Radar(3-LB) 0;Radar(4-RB) 0");
+  //frame_sp_count_label_ = new QLabel("Frame (SP): Radar(1-LT) 0;Radar(2-RT) 0;Radar(3-LB) 0;Radar(4-RB) 0");
   frame_id_label_ = new QLabel("Frame ID: N/A  Timestamp: N/A");
   play_rate_combo_ = new QComboBox;
   play_sp_date_ = new QCheckBox("SP");
@@ -84,12 +84,12 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   play_rate_combo_->addItem("1.5");
   play_rate_combo_->addItem("2.0");
 
-    select_button_->setFixedSize(50, 30);
-  read_button_->setFixedSize(50, 30);
+  select_button_->setFixedSize(40, 30);
+  read_button_->setFixedSize(40, 30);
   play_button_->setFixedSize(40, 30);
   stop_button_->setFixedSize(40, 30);
-  step_forward_button_->setFixedSize(50, 30);
-  step_backward_button_->setFixedSize(50, 30);
+  step_forward_button_->setFixedSize(25, 30);
+  step_backward_button_->setFixedSize(25, 30);
 
   select_main_radar_->addItem("前(0)");
   select_main_radar_->addItem("前左(1)");
@@ -120,14 +120,14 @@ MyRvizPlugin::MyRvizPlugin(QWidget* parent)
   control_layout->addWidget(step_forward_button_);
   control_layout->addWidget(play_button_);
   control_layout->addWidget(stop_button_);
-  control_layout->addWidget(new QLabel("Play Rate:"));
+  control_layout->addWidget(new QLabel("Rate:"));
   control_layout->addWidget(play_rate_combo_);
   control_layout->addWidget(play_sp_date_);
   control_layout->addWidget(select_main_radar_);
 
   layout->addLayout(file_layout);
   layout->addWidget(frame_count_label_);
-  layout->addWidget(frame_sp_count_label_);
+  //layout->addWidget(frame_sp_count_label_);
   layout->addWidget(frame_id_label_);
   layout->addWidget(frame_spinner_);
   layout->addWidget(frame_slider_);
@@ -456,10 +456,10 @@ void MyRvizPlugin::readBagFile()// 2025/9/17
     
     bag_reader_->readBagFile(path, frame_count0, frame_sp_count0,frame_count1, frame_sp_count1, frame_count2, frame_sp_count2,
       frame_count3, frame_sp_count3, frame_count4, frame_sp_count4);
-    frame_count_label_->setText("Frame : Radar(0) " + QString::number(frame_count0) + ";Radar(1-LT) " + QString::number(frame_count1) +
-      ";Radar(2-RT) " + QString::number(frame_count2) +";Radar(3-LB) " + QString::number(frame_count3) + ";Radar(4-RB) " + QString::number(frame_count4));
-    frame_sp_count_label_->setText("Frame (SP): Radar(0) " + QString::number(frame_sp_count0) + ";Radar(1-LT) " + QString::number(frame_sp_count1) +
-      ";Radar(2-RT) " + QString::number(frame_sp_count2) +";Radar(3-LB) " + QString::number(frame_sp_count3) + ";Radar(4-RB) " + QString::number(frame_sp_count4));
+    frame_count_label_->setText("Frame:(0)-" + QString::number(frame_count0) + ";(1)-" + QString::number(frame_count1) +
+      ";(2)-" + QString::number(frame_count2) +";(3)-" + QString::number(frame_count3) + ";(4)- " + QString::number(frame_count4));
+      // frame_sp_count_label_->setText("Frame (SP): Radar(0) " + QString::number(frame_sp_count0) + ";Radar(1-LT) " + QString::number(frame_sp_count1) +
+      // ";Radar(2-RT) " + QString::number(frame_sp_count2) +";Radar(3-LB) " + QString::number(frame_sp_count3) + ";Radar(4-RB) " + QString::number(frame_sp_count4));
    
    
     // 复位控件时屏蔽信号，避免触发jumpToFrame在read阶段发布首帧
@@ -737,7 +737,17 @@ void MyRvizPlugin::selectMainRadar()
 }
 void MyRvizPlugin::updateSliderAndSpinner()
 {
-  frame_slider_->setValue(bag_reader_->getCurrentFrame());
+  // 本函数在播放线程被调用，控件操作必须投递到主线程，否则跨线程直接操作 QWidget 会崩溃；同时屏蔽信号避免触发
+  // sliderValueChanged/jumpToFrame 导致同帧重发
+  int frame = bag_reader_->getCurrentFrame();
+  QMetaObject::invokeMethod(this, [this, frame](){
+    frame_slider_->blockSignals(true);
+    frame_spinner_->blockSignals(true);
+    frame_slider_->setValue(frame);
+    frame_spinner_->setValue(frame);
+    frame_slider_->blockSignals(false);
+    frame_spinner_->blockSignals(false);
+  }, Qt::QueuedConnection);
 }
 
 } // namespace my_rviz_plugin

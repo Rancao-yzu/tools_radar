@@ -1,0 +1,6 @@
+uint8 radar_pos
+uint16 frame_id
+uint8 status
+---
+
+bool success

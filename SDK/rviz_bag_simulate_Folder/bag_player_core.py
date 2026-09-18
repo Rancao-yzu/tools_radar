@@ -14,7 +14,7 @@
 import os
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 import rospy
 import rosbag
@@ -213,7 +213,7 @@ class BagPlayer(object):
                 msg = _instantiate(loader.sp[radar_idx][msg_idx])
                 if radar_idx == 3:
                     self._report_frame_info(msg.frameID, msg.header.stamp)
-                    rospy.loginfo('Pointcloud custom frame_id: %d', msg.frameID)
+                    rospy.loginfo('Pointcloud3 custom frame_id: %d', msg.frameID)
                 self.sp_pubs[radar_idx].publish(msg)
 
         for cam_idx in range(6):
@@ -224,7 +224,7 @@ class BagPlayer(object):
     def _report_frame_info(self, frame_id, stamp):
         # 时间戳 +8 小时（与 C++ time_offset 一致）
         try:
-            dt = datetime.utcfromtimestamp(stamp.to_sec() + 8 * 3600.0)
+            dt = datetime.fromtimestamp(stamp.to_sec(), tz=timezone.utc) + timedelta(hours=8)
             time_str = dt.strftime('%Y-%m-%d %H:%M:%S.%f')
         except Exception:
             time_str = str(stamp)

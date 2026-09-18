@@ -67,8 +67,7 @@ class PlayerWindow(QWidget):
         self.step_forward_button = QPushButton('->')
         self.step_backward_button = QPushButton('<-')
         self.frame_spinner = QSpinBox()
-        self.step_spinner = QSpinBox()
-        self.frame_count_label = QLabel('Frame : Radar(1-LT) 0;Radar(2-RT) 0;Radar(3-LB) 0;Radar(4-RB) 0')
+        self.frame_count_label = QLabel('Frame number:N/A')
         self.frame_id_label = QLabel('Frame ID: N/A  Timestamp: N/A')
         self.status_label = QLabel('')
         self.play_rate_combo = QComboBox()
@@ -97,8 +96,6 @@ class PlayerWindow(QWidget):
         self.select_main_radar.addItem('后(5)')
 
         self.frame_spinner.setMinimum(0)
-        self.step_spinner.setMinimum(1)
-        self.step_spinner.setValue(1)
         self.frame_slider.setMinimum(0)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
@@ -113,8 +110,6 @@ class PlayerWindow(QWidget):
         folder_layout.addWidget(self.select_folder_button)
         folder_layout.addWidget(self.folder_read_button)
         control_layout = QHBoxLayout()
-        control_layout.addWidget(QLabel('Step:'))
-        control_layout.addWidget(self.step_spinner)
         control_layout.addWidget(self.step_backward_button)
         control_layout.addWidget(self.step_forward_button)
         control_layout.addWidget(self.play_button)
@@ -162,7 +157,7 @@ class PlayerWindow(QWidget):
         not_busy = False if mode in ('loading', 'playing') else True
         self.play_button.setEnabled(mode == 'ready')
         self.stop_button.setEnabled(mode == 'playing')
-        for w in (self.frame_spinner, self.step_spinner, self.step_forward_button,
+        for w in (self.frame_spinner, self.step_forward_button,
                   self.step_backward_button, self.play_rate_combo, self.frame_slider,
                   self.play_sp_date, self.select_main_radar):
             w.setEnabled(mode == 'ready')
@@ -237,7 +232,7 @@ class PlayerWindow(QWidget):
         QApplication.processEvents()   # 让进度条在读取过程中刷新
 
     def _on_bag_loaded(self, d):
-        self.frame_count_label.setText('Frame:(0)-%d; (1)-%d; (2)-%d; (3)-%d; (4)-%d' % tuple(d['pcl']))
+        self.frame_count_label.setText('(0)-%d; (1)-%d; (2)-%d; (3)-%d; (4)-%d' % tuple(d['pcl']))
         # 屏蔽信号复位，避免触发 jump_to_frame 在 read 阶段发布首帧（与 C++ 一致）
         self.frame_spinner.blockSignals(True)
         self.frame_slider.blockSignals(True)
@@ -262,12 +257,10 @@ class PlayerWindow(QWidget):
             self.player.jump(self.frame_spinner.value())
 
     def step_forward(self):
-        step = self.step_spinner.value()
-        self.frame_spinner.setValue(min(self.frame_spinner.value() + step, self.frame_spinner.maximum() - 1))
+        self.frame_spinner.setValue(min(self.frame_spinner.value() + 1, self.frame_spinner.maximum() - 1))
 
     def step_backward(self):
-        step = self.step_spinner.value()
-        self.frame_spinner.setValue(max(self.frame_spinner.value() - step, self.frame_spinner.minimum()))
+        self.frame_spinner.setValue(max(self.frame_spinner.value() - 1, self.frame_spinner.minimum()))
 
     def _on_frame_updated(self, frame):
         self.frame_slider.blockSignals(True)
